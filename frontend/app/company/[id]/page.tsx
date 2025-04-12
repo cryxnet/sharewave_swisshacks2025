@@ -100,6 +100,7 @@ export default function CompanyDetailPage() {
 
   const [companyData, setCompanyData] = useState<CompanyFullInfo | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [isCheck, setIsCheck] = useState(false);
   const [isDistributing, setIsDistributing] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [activeTab, setActiveTab] = useState("stakeholders");
@@ -179,6 +180,43 @@ export default function CompanyDetailPage() {
   // Refresh data
   const handleRefresh = () => {
     setRefreshKey((prev) => prev + 1);
+  };
+
+  const handleCheckOnly = async () => {
+    setIsCheck(true);
+    try {
+      const response = await fetch(
+        `http://localhost:8000/companies/${companyId}/check_stakeholders`,
+        {
+          method: "POST",
+        }
+      );
+
+      const result = await response.json();
+
+      if (!response.ok) {
+        throw new Error(result.message || "Stakeholder check failed");
+      }
+
+      toast({
+        title: "Check Complete",
+        description: result.message || "All stakeholders are ready.",
+      });
+
+      setRefreshKey((prev) => prev + 1);
+    } catch (error) {
+      console.error("Check error:", error);
+      toast({
+        title: "Check Failed",
+        description:
+          error instanceof Error
+            ? error.message
+            : "An unexpected error occurred",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCheck(false);
+    }
   };
 
   if (isLoading) {
@@ -262,13 +300,13 @@ export default function CompanyDetailPage() {
 
             <Button
               size="sm"
-              onClick={handleDistribute}
+              onClick={handleCheckOnly}
               className="flex items-center gap-1 bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600"
             >
-              {isDistributing ? (
+              {isCheck ? (
                 <>
                   <RefreshCw className="h-4 w-4 animate-spin" />
-                  Processing...
+                  Checking...
                 </>
               ) : (
                 <>
@@ -351,6 +389,16 @@ export default function CompanyDetailPage() {
     );
   }
 
+  const getInitials = (name: string) => {
+    const words = name.trim().split(" ");
+    if (words.length === 1) {
+      return words[0].substring(0, 2).toUpperCase();
+    }
+    return (words[0][0] + words[1][0]).toUpperCase();
+  };
+
+  const logoInitials = getInitials(company.name);
+
   // Regular view for distributed companies
   return (
     <div className="container mx-auto py-8 px-4 md:px-6">
@@ -368,6 +416,10 @@ export default function CompanyDetailPage() {
             <span>Company Details</span>
           </div>
           <h1 className="text-3xl font-bold tracking-tight flex items-center gap-2">
+            {/* Logo Badge */}
+            <span className="inline-flex items-center justify-center w-9 h-9 rounded-full bg-blue-600 text-white font-semibold text-lg">
+              {logoInitials}
+            </span>
             {company.name}
             <Badge variant="outline" className="ml-2">
               {company.symbol}

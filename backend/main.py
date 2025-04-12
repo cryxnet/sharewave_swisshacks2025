@@ -1108,3 +1108,89 @@ async def get_full_company_info(company_id: str):
         "token_holders": token_holders,
         "amm_info": amm_info
     }
+
+
+@app.post("/companies/{company_id}/check_stakeholders")
+async def check_stakeholders(company_id: str):
+    """
+    Performs the stakeholder check: 
+    - Verifies if each shareholder has paid their required RLUSD.
+    - Verifies if they have set the trustline.
+    - Updates DB to reflect new has_paid and has_trustline flags.
+    - Returns status of each shareholder.
+    
+    This does NOT perform token distribution or create AMM.
+    """
+    db = app.state.db
+    company = await get_company_with_shareholders(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    symbol = company["symbol"]
+    issuing_addr = company["issuing_address"]
+
+    updated_shareholders = []
+    for sh in company["shareholders"]:
+        # Check Payment
+        if not sh["has_paid"]:
+            payment_ok = await check_rlusd_payment(
+                company_addr=issuing_addr,
+                shareholder_addr=sh["wallet_address"],
+                amount_needed=sh["required_rlusd"]
+            )
+            if payment_ok:
+                sh["has_paid"] = True
+
+        # Check Trustline
+        if not sh["has_trustline"]:
+            trustline_ok = await check_trustline(
+                shareholder_addr=sh["wallet_address"],
+                token_symbol=symbol,
+                issuer_addr=issuing_addr
+            )
+            if trustline_ok:
+                sh["has_trustline"] = True
+
+        updated_shareholders.append(sh)
+
+    # Update the database
+    for sh in updated_shareholders:
+        await db.execute("""
+            UPDATE shareholders
+            SET has_paid=?, has_trustline=?
+            WHERE id=?
+        """, (
+            int(sh["has_paid"]),
+            int(sh["has_trustline"]),
+            sh["id"]
+        ))
+    await db.commit()
+
+    # Identify missing ones
+    not_paid = []
+    not_trustlined = []
+    for sh in updated_shareholders:
+        if not sh["has_paid"]:
+            not_paid.append({
+                "wallet_address": sh["wallet_address"],
+                "still_owed_rlusd": sh["required_rlusd"]
+            })
+        if not sh["has_trustline"]:
+            not_trustlined.append({
+                "wallet_address": sh["wallet_address"],
+                "token_symbol": symbol
+            })
+
+    # Final output
+    if not_paid or not_trustlined:
+        return {
+            "message": "Some shareholders are still missing payment and/or trustline.",
+            "not_paid": not_paid,
+            "not_trustlined": not_trustlined
+        }
+
+    return {
+        "message": "All shareholders have paid and set trustlines. Ready for distribution.",
+        "not_paid": [],
+        "not_trustlined": []
+    }
