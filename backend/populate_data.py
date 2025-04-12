@@ -29,6 +29,166 @@ SAMPLE_COMPANIES = [
         "description": "Sustainable energy solutions for industry",
         "location": "Remote",
         "total_valuation_usd": 50_000_000.0
+    },
+    {
+        "name": "NeuroSync AI",
+        "industry": "AI",
+        "stage": "Seed",
+        "description": "Cognitive AI tools for mental health diagnostics",
+        "location": "Germany",
+        "total_valuation_usd": 3_000_000.0
+    },
+    {
+        "name": "AgroNova Tech",
+        "industry": "AgriTech",
+        "stage": "Series A",
+        "description": "Smart farming solutions using IoT and AI",
+        "location": "Netherlands",
+        "total_valuation_usd": 12_000_000.0
+    },
+    {
+        "name": "QuantumLeap Systems",
+        "industry": "Quantum Computing",
+        "stage": "Pre-Seed",
+        "description": "Building scalable quantum hardware",
+        "location": "Switzerland",
+        "total_valuation_usd": 1_500_000.0
+    },
+    {
+        "name": "UrbanMobility Inc.",
+        "industry": "Mobility",
+        "stage": "Series B",
+        "description": "Electric micro-mobility solutions for cities",
+        "location": "Remote",
+        "total_valuation_usd": 40_000_000.0
+    },
+    {
+        "name": "MedScan Diagnostics",
+        "industry": "HealthTech",
+        "stage": "Series A",
+        "description": "AI-powered medical imaging diagnostics",
+        "location": "Germany",
+        "total_valuation_usd": 10_000_000.0
+    },
+    {
+        "name": "EcoFabric Co.",
+        "industry": "Sustainability",
+        "stage": "Seed",
+        "description": "Sustainable and biodegradable textile production",
+        "location": "Sweden",
+        "total_valuation_usd": 2_800_000.0
+    },
+    {
+        "name": "FinNova AI",
+        "industry": "Fintech",
+        "stage": "Series A",
+        "description": "AI-driven personal finance and wealth management tools",
+        "location": "Switzerland",
+        "total_valuation_usd": 9_000_000.0
+    },
+    {
+        "name": "DeepSpace Mining",
+        "industry": "Aerospace",
+        "stage": "Series B",
+        "description": "Asteroid mining tech for rare materials",
+        "location": "Germany",
+        "total_valuation_usd": 70_000_000.0
+    },
+    {
+        "name": "SmartGrid AI",
+        "industry": "CleanTech",
+        "stage": "Series A",
+        "description": "AI solutions for optimizing energy grids",
+        "location": "Switzerland",
+        "total_valuation_usd": 18_000_000.0
+    },
+    {
+        "name": "EduBotics",
+        "industry": "EdTech",
+        "stage": "Seed",
+        "description": "Robotic education kits for children and schools",
+        "location": "Germany",
+        "total_valuation_usd": 3_500_000.0
+    },
+    {
+        "name": "CyberGuard Labs",
+        "industry": "Cybersecurity",
+        "stage": "Series A",
+        "description": "Advanced threat detection using machine learning",
+        "location": "Remote",
+        "total_valuation_usd": 15_000_000.0
+    },
+    {
+        "name": "PlantAI",
+        "industry": "AgriTech",
+        "stage": "Seed",
+        "description": "AI-based plant health diagnostics and monitoring",
+        "location": "Netherlands",
+        "total_valuation_usd": 2_200_000.0
+    },
+    {
+        "name": "OceanClean Robotics",
+        "industry": "Sustainability",
+        "stage": "Series B",
+        "description": "Robots for cleaning plastic from oceans and rivers",
+        "location": "Switzerland",
+        "total_valuation_usd": 45_000_000.0
+    },
+    {
+        "name": "BioSynth Foods",
+        "industry": "FoodTech",
+        "stage": "Series A",
+        "description": "Synthetic biology for alternative protein production",
+        "location": "Germany",
+        "total_valuation_usd": 13_000_000.0
+    },
+    {
+        "name": "LegalEase AI",
+        "industry": "LegalTech",
+        "stage": "Seed",
+        "description": "AI-based contract analysis and legal assistance",
+        "location": "Remote",
+        "total_valuation_usd": 4_000_000.0
+    },
+    {
+        "name": "NanoMed Devices",
+        "industry": "MedTech",
+        "stage": "Series A",
+        "description": "Nanotech for targeted drug delivery",
+        "location": "Germany",
+        "total_valuation_usd": 11_000_000.0
+    },
+    {
+        "name": "SolarX Innovations",
+        "industry": "CleanTech",
+        "stage": "Seed",
+        "description": "High-efficiency solar panels with flexible materials",
+        "location": "Switzerland",
+        "total_valuation_usd": 3_800_000.0
+    },
+    {
+        "name": "DataSphere Analytics",
+        "industry": "Big Data",
+        "stage": "Series B",
+        "description": "Scalable analytics platform for real-time insights",
+        "location": "Remote",
+        "total_valuation_usd": 55_000_000.0
+    },
+    {
+        "name": "ReGen Materials",
+        "industry": "Sustainability",
+        "stage": "Series A",
+        "description": "Upcycling waste into high-performance materials",
+        "location": "Germany",
+        "total_valuation_usd": 8_000_000.0
+    },
+    {
+        "name": "MindLink VR",
+        "industry": "XR/VR",
+        "stage": "Pre-Seed",
+        "description": "Immersive therapy solutions using VR and biofeedback",
+        "location": "Remote",
+        "total_valuation_usd": 1_200_000.0
     }
 ]
 

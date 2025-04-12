@@ -35,6 +35,30 @@ async def get_db():
     finally:
         await db.close()
 
+@router.get("/all", response_model=dict)
+async def get_all_entities_full(
+    db: Database = Depends(get_db)
+):
+    """
+    Returns full details for all companies and investors, excluding embeddings.
+    """
+    try:
+        companies = await db.get_all_companies()
+        investors = await db.get_all_investors()
+
+        def exclude_embedding(obj):
+            data = obj.model_dump()
+            data.pop("embedding", None)
+            return data
+
+        return {
+            "companies": [exclude_embedding(c) for c in companies],
+            "investors": [exclude_embedding(i) for i in investors]
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching full entities: {str(e)}")
+    
 @router.get("/company/{company_id}", response_model=MatchesResponse)
 async def get_company_matches(
     company_id: str,

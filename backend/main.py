@@ -1194,3 +1194,7 @@ async def check_stakeholders(company_id: str):
         "not_paid": [],
         "not_trustlined": []
     }
+
+# We're going to include the AI part in one single app
+from match_endpoints import router as matching_router
+app.include_router(matching_router)

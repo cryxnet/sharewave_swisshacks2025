@@ -30,10 +30,10 @@ export default function Navbar() {
       active: pathname.includes("/dashboard") || pathname.includes("/company"),
     },
     {
-      href: "/ai",
+      href: "/matching",
       label: "AI Matching",
       icon: <BarChart3 className="mr-2 h-4 w-4" />,
-      active: pathname.includes("/ai") || pathname.includes("/company"),
+      active: pathname.includes("/matching"),
     },
   ];
 
