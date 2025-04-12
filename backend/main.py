@@ -22,6 +22,7 @@ from pydantic import BaseModel
 from typing import List
 import math
 import uuid
+import asyncio
 
 # ------------------ SQLite Setup via aiosqlite ------------------
 import aiosqlite
@@ -80,19 +81,19 @@ async def shutdown():
 
 # --------------- XRPL Integration ---------------
 from xrpl.clients import JsonRpcClient
-from xrpl.wallet import generate_faucet_wallet, Wallet
-from xrpl.models.transactions import (
-    Payment,
-    AMMCreate
-)
-from xrpl.transaction import safe_sign_and_submit_transaction
+from xrpl.wallet import  Wallet
+from xrpl.models.transactions import Payment, AMMCreate
 from xrpl.models import requests
+from xrpl.asyncio.wallet import generate_faucet_wallet
+
+# These are the new, shorter-named functions in xrpl-py v2.0.0:
+from xrpl.transaction import sign_and_submit
 
 XRPL_URL = "https://s.altnet.rippletest.net:51234"
 XRPL_CLIENT = JsonRpcClient(XRPL_URL)
 
 # For demonstration, we treat "RLUSD" as an IOU from a known test issuer on XRPL:
-RLUSD_ISSUER = "rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq"
+RLUSD_ISSUER = "rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV"
 RLUSD_CURRENCY = "USD"
 
 # --------------- Data Models ---------------
@@ -120,12 +121,13 @@ class CompanyInput(BaseModel):
 
 # ----------- XRPL Utility Functions -----------
 
+
 async def create_issuing_wallet():
     """
-    Creates (funds) a brand-new wallet on the XRPL testnet.
+    Creates (funds) a brand-new wallet on the XRPL testnet using the faucet.
     Returns (address, seed).
     """
-    w = generate_faucet_wallet(XRPL_CLIENT, debug=False)
+    w = await generate_faucet_wallet(XRPL_CLIENT, debug=False)
     return w.classic_address, w.seed
 
 async def check_rlusd_payment(company_addr: str, shareholder_addr: str, amount_needed: float) -> bool:
@@ -145,7 +147,7 @@ async def check_rlusd_payment(company_addr: str, shareholder_addr: str, amount_n
         # Must be a Payment from the shareholder
         if tx.get("TransactionType") == "Payment" and tx.get("Account") == shareholder_addr:
             delivered_amount = meta.get("delivered_amount")
-            # For IOU, delivered_amount is an object like:
+            # For IOU, delivered_amount is a dict like:
             # {"currency":"USD","issuer":"rhub8...","value":"5000"}
             if isinstance(delivered_amount, dict):
                 if (delivered_amount["currency"] == RLUSD_CURRENCY and
@@ -182,8 +184,9 @@ async def distribute_tokens(
     """
     tokens_to_send = math.floor(total_supply * (shareholder_percent / 100.0))
 
-    # We must sign with the issuer wallet (the company's private key)
-    wallet = Wallet(seed=issuer_seed, sequence=0)
+    # Build a Wallet from the issuer's seed.
+    # If you need secp256k1 for older seeds, do: Wallet.from_seed(issuer_seed, algorithm="secp256k1")
+    wallet = Wallet.from_seed(issuer_seed)
 
     pay_tx = Payment(
         account=issuer_addr,
@@ -194,7 +197,10 @@ async def distribute_tokens(
             "value": str(tokens_to_send)
         }
     )
-    result = safe_sign_and_submit_transaction(pay_tx, wallet, XRPL_CLIENT)
+
+    # Instead of safe_sign_and_submit_transaction, use sign_and_submit
+    # Notice new param order: (transaction, client, wallet)
+    result = sign_and_submit(pay_tx, XRPL_CLIENT, wallet)
     return {
         "shareholder": shareholder_addr,
         "tokens_sent": tokens_to_send,
@@ -210,23 +216,14 @@ async def create_amm_pool(
 ):
     """
     Create an AMM pool on XRPL pairing 'token_symbol' with RLUSD.
-
-    XRPL AMM requires:
-      AMMCreate:
-        - Amount = one asset
-        - Amount2 = second asset
-        - Optionally TradingFee, etc.
     """
-    wallet = Wallet(seed=issuer_seed, sequence=0)
+    wallet = Wallet.from_seed(issuer_seed)
 
-    # AMM uses 'Amount' and 'Amount2'. Let's define them carefully:
-    # 1) The company's token
     amount1 = {
         "currency": token_symbol,
         "issuer": issuer_addr,
         "value": str(token_amount)
     }
-    # 2) The RLUSD
     amount2 = {
         "currency": RLUSD_CURRENCY,
         "issuer": RLUSD_ISSUER,
@@ -241,8 +238,8 @@ async def create_amm_pool(
         trading_fee=500
     )
 
-    # Submit
-    result = safe_sign_and_submit_transaction(amm_create_tx, wallet, XRPL_CLIENT)
+    # Again, sign_and_submit replaces the old safe_sign_and_submit_transaction
+    result = sign_and_submit(amm_create_tx, XRPL_CLIENT, wallet)
     return result.result
 
 
@@ -250,7 +247,7 @@ async def create_amm_pool(
 async def get_company_with_shareholders(db: aiosqlite.Connection, company_id: str):
     """
     Fetches a single company row plus all its shareholders, and returns
-    a dict that mimics the original MongoDB document structure.
+    a dict that mimics the original "document" structure.
     """
     # Get company row
     company_cursor = await db.execute("""
