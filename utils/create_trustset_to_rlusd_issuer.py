@@ -44,6 +44,7 @@ async def create_trustline(wallet_info):
 
     trust_tx = TrustSet(
         account=address,
+        flags=262144,
         limit_amount=IssuedCurrencyAmount(
             currency=RLUSD_CURRENCY,
             issuer=RLUSD_ISSUER,

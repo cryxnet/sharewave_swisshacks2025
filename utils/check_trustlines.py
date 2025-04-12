@@ -15,9 +15,9 @@ from xrpl.models.requests import AccountLines
 ACCOUNTS_FILE = "xrpl_testnet_wallets.json"  # Update to your actual JSON filename
 TESTNET_URL = "https://s.altnet.rippletest.net:51234"
 
-# We assume the token symbol is "ACRP" and the issuer is rDsM3HgETmGozgF9crnQ9kjHs7m5aGpej2.
-CURRENCY_SYMBOL = "ACRP"
-ISSUER = "rDsM3HgETmGozgF9crnQ9kjHs7m5aGpej2"
+# We assume the token symbol is "ACRP" and the issuer is rptQwHDxLACEPw3pNmj6Tw5YvWHANdyj5S.
+CURRENCY_SYMBOL = "ATCO"
+ISSUER = "rptQwHDxLACEPw3pNmj6Tw5YvWHANdyj5S"
 
 def currency_to_hex(currency: str) -> str:
     """

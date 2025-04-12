@@ -12,8 +12,8 @@ RLUSD_CURRENCY = "524C555344000000000000000000000000000000"  # 20-byte hex = RLU
 TRUST_LIMIT = "1000000"
 
 # === Input your wallet info here ===
-ADDRESS = "rDsM3HgETmGozgF9crnQ9kjHs7m5aGpej2"
-SECRET = "sEdVqbuDfd1GWF7jCVVVLDtpGbGdnSj"
+ADDRESS = "rptQwHDxLACEPw3pNmj6Tw5YvWHANdyj5S"
+SECRET = "sEd76GB6NjbmnmSq3T1FKd87fgNELf4"
 
 async def create_trustline(address: str, secret: str):
     client = AsyncJsonRpcClient(TESTNET_URL)
@@ -21,6 +21,7 @@ async def create_trustline(address: str, secret: str):
 
     trust_tx = TrustSet(
         account=address,
+        flags=262144,
         limit_amount=IssuedCurrencyAmount(
             currency=RLUSD_CURRENCY,
             issuer=RLUSD_ISSUER,
