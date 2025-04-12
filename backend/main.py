@@ -2,10 +2,11 @@ import math
 import uuid
 import asyncio
 from typing import List
-
+from collections import deque
 import aiosqlite
 from fastapi import FastAPI, HTTPException, Query
 from pydantic import BaseModel
+from fastapi.middleware.cors import CORSMiddleware
 
 # ------------------ Database File ------------------
 DATABASE_FILE = "sharewave_db.sqlite"
@@ -13,6 +14,14 @@ DATABASE_FILE = "sharewave_db.sqlite"
 # ------------------ FastAPI App ------------------
 app = FastAPI()
 
+
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:3000"],  # add production domains as needed
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 @app.on_event("startup")
 async def startup():
     """
@@ -65,6 +74,8 @@ from xrpl.models.transactions import Payment, AMMCreate, TrustSet
 from xrpl.models.requests import AccountTx, AccountLines
 from xrpl.wallet import Wallet
 from xrpl.models.amounts import IssuedCurrencyAmount
+from xrpl.models.requests import AccountObjects
+from xrpl.models.requests import AMMInfo
 
 XRPL_URL = "https://s.altnet.rippletest.net:51234"
 XRPL_CLIENT = AsyncJsonRpcClient(XRPL_URL)
@@ -102,6 +113,35 @@ class CompanyInput(BaseModel):
 import datetime
 
 RIPPLE_EPOCH_OFFSET = 946684800
+
+# ------------------ Helper: Get Token Holding ------------------
+# This helper queries XRPL for the account lines of a given shareholder,
+# then searches for the trustline for the specified token (e.g. company token)
+# issued by the company's issuing address. It returns a dict with:
+#   - "exists": True/False if the trustline exists
+#   - "balance": The balance from the trustline, as a string.
+# Helper: Query on-chain trustline info for a given address.
+# (This function uses the XRPL AccountLines request.)
+async def get_token_holding(shareholder_addr: str, token_symbol: str, issuer_addr: str) -> dict:
+    """
+    Query the XRPL ledger for the given shareholder's trustline of the token
+    issued by `issuer_addr`. Returns a dict with:
+      - "exists": True if the trustline exists.
+      - "balance": The current balance of the token for that address.
+    """
+    token_hex = currency_to_hex(token_symbol)
+    from xrpl.models.requests import AccountLines
+    req = AccountLines(account=shareholder_addr, ledger_index="validated")
+    try:
+        resp = await XRPL_CLIENT.request(req)
+    except Exception as e:
+        print(f"[!] Error querying account_lines for {shareholder_addr}: {e}")
+        return {"exists": False, "balance": "0"}
+    lines = resp.result.get("lines", [])
+    for line in lines:
+        if line.get("currency", "").upper() == token_hex and line.get("account") == issuer_addr:
+            return {"exists": True, "balance": line.get("balance", "0")}
+    return {"exists": False, "balance": "0"}
 
 def ripple_date_to_datetime(ripple_date: int) -> datetime.datetime:
     """
@@ -790,3 +830,367 @@ async def debug_issuer_transactions(issuer_addr: str):
                 "date": tx.get("date")  # if available
             })
     return {"issuer_transactions": debug_list}
+
+@app.get("/companies/{company_id}/token_holdings")
+async def get_token_holdings_endpoint(company_id: str):
+    """
+    Returns a list of all addresses holding this company's token,
+    based on the issuer's AccountLines. For each trustline entry:
+
+      - "account": the holder's address
+      - "balance": from the issuer's perspective
+         * A negative balance => the holder actually owns that positive amount.
+         * A zero or positive balance => the holder doesn't own the token (they owe tokens to the issuer).
+      - We compute the holder's actual token balance as -balance_float if negative, else 0.
+
+    Then we calculate the percentage of total supply as:
+      (holder_balance / total_supply) * 100
+
+    Only non-zero holders are returned.
+    """
+
+    # 1) Fetch the company's details from your DB
+    db = app.state.db
+    company = await get_company_with_shareholders(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    # Issuer info from DB
+    issuing_addr = company["issuing_address"]
+    token_symbol = company["symbol"]  # e.g. "WTAC"
+    total_supply = company["total_supply"]
+
+    # Convert ASCII symbol to 40-char hex
+    token_hex = currency_to_hex(token_symbol)
+
+    # 2) Query all trustlines from the issuer's perspective
+    try:
+        req = AccountLines(account=issuing_addr, ledger_index="validated")
+        resp = await XRPL_CLIENT.request(req)
+    except Exception as e:
+        print(f"[!] Error in AccountLines for {issuing_addr}: {e}")
+        raise HTTPException(status_code=500, detail="Error querying XRPL for issuer trustlines.")
+
+    lines = resp.result.get("lines", [])
+    if not lines:
+        return {"token_holdings": []}  # No trustlines at all
+
+    # 3) Parse each trustline
+    holdings_table = []
+    for line in lines:
+        # Filter only lines matching our token
+        if line.get("currency", "").upper() != token_hex:
+            continue
+
+        holder_addr = line.get("account")
+        balance_str = line.get("balance", "0")
+
+        # The "balance" is from the issuer's perspective:
+        # A negative issuer balance => the holder actually owns a positive amount.
+        try:
+            issuer_balance = float(balance_str)
+        except ValueError:
+            issuer_balance = 0.0
+
+        # The holder's actual token holdings:
+        holder_balance = 0.0
+        if issuer_balance < 0:
+            holder_balance = -issuer_balance  # invert sign
+
+        # Skip if the holder's actual balance is zero
+        if holder_balance <= 0:
+            continue
+
+        # Compute percent ownership
+        if total_supply > 0:
+            percent_ownership = (holder_balance / total_supply) * 100.0
+        else:
+            percent_ownership = 0.0
+
+        # Add row to results
+        holdings_table.append({
+            "Wallet Address": holder_addr,
+            "Token Balance": str(holder_balance),
+            "Percent Ownership": round(percent_ownership, 2),
+            "Trustline Active": True  # obviously they have an active trustline if they're in lines
+        })
+
+    # Return the final array of non-zero holders
+    return {"token_holdings": holdings_table}
+
+# ------------------ Endpoint 2: Initial Stakeholder Check ------------------
+@app.get("/companies/{company_id}/initial_stakeholder_check")
+async def initial_stakeholder_check(company_id: str):
+    """
+    Returns a checklist for all stakeholders (from the company registration) showing for each:
+      - Wallet Address
+      - Required RLUSD (the amount they must pay)
+      - Has Paid (boolean from the DB)
+      - Has Trustline (boolean from the DB)
+      - Status: a string that is "Ready" if both are complete, or mentions what is missing.
+      
+    The frontend may display this information as a table.
+    """
+    db = app.state.db
+    company = await get_company_with_shareholders(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    
+    check_table = []
+    for sh in company["shareholders"]:
+        status = []
+        if not sh["has_paid"]:
+            status.append("Missing Payment")
+        if not sh["has_trustline"]:
+            status.append("Missing Trustline")
+        status_str = "Ready" if not status else ", ".join(status)
+        
+        check_table.append({
+            "Wallet Address": sh["wallet_address"],
+            "Required RLUSD": sh["required_rlusd"],
+            "Has Paid": sh["has_paid"],
+            "Has Trustline": sh["has_trustline"],
+            "Status": status_str
+        })
+    
+    return {"initial_stakeholder_check": check_table}
+
+
+@app.get("/companies/{company_id}/amm_info")
+async def get_amm_info_endpoint(
+    company_id: str,
+    account: str = Query(
+        None,
+        description="Optional: an account id (e.g. a wallet address) to be used as the amm_account for the query."
+    )
+):
+    """
+    Retrieves AMM pool information using the AMMInfo request for a token pair consisting of:
+      - Asset 1 (RLUSD): defined by RLUSD_CURRENCY and RLUSD_ISSUER.
+      - Asset 2 (Company token): defined by the company’s token symbol (converted to 40-character hex)
+        and the company’s issuing address.
+    
+    The company record is obtained from the database using company_id.
+    If the optional query parameter "account" is provided, that account is used as amm_account.
+    
+    Returns a JSON object containing the AMM pool information.
+    """
+    # Retrieve company details from the database.
+    db = app.state.db
+    company = await get_company_with_shareholders(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+    
+    issuing_addr = company["issuing_address"]
+    token_symbol = company["symbol"]
+
+    # Build asset objects with both currency and issuer.
+    rlusd_asset = {"currency": RLUSD_CURRENCY, "issuer": RLUSD_ISSUER}
+    company_token_asset = {"currency": currency_to_hex(token_symbol), "issuer": issuing_addr}
+
+    try:
+        if account:
+            req = AMMInfo(
+                amm_account=account,
+                asset=rlusd_asset,
+                asset2=company_token_asset,
+            )
+        else:
+            req = AMMInfo(
+                asset=rlusd_asset,
+                asset2=company_token_asset,
+            )
+        resp = await XRPL_CLIENT.request(req)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error querying AMM info: {e}")
+
+    return {"amm_info": resp.result}
+
+@app.get("/companies/{company_id}/full_info")
+async def get_full_company_info(company_id: str):
+    """
+    Gathers and returns:
+    - Company details
+    - Shareholders and their status (paid, trustlined, tokens_distributed)
+    - Token holders (actual trustline balances)
+    - AMM info if available
+    - Calculated stats like market cap, price, and AMM liquidity split
+    """
+    db = app.state.db
+    company = await get_company_with_shareholders(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    total_supply = company["total_supply"]
+    token_symbol = company["symbol"]
+    issuing_addr = company["issuing_address"]
+
+    # --------------------- Token Holders ---------------------
+    token_hex = currency_to_hex(token_symbol)
+    try:
+        lines_resp = await XRPL_CLIENT.request(AccountLines(account=issuing_addr, ledger_index="validated"))
+        lines = lines_resp.result.get("lines", [])
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Error fetching token trustlines: {e}")
+
+    token_holders = []
+    total_holder_tokens = 0.0
+    for line in lines:
+        if line.get("currency", "").upper() != token_hex:
+            continue
+        balance_str = line.get("balance", "0")
+        try:
+            bal = float(balance_str)
+        except:
+            bal = 0.0
+        if bal < 0:
+            owned = -bal
+            total_holder_tokens += owned
+            token_holders.append({
+                "wallet_address": line.get("account"),
+                "balance": owned
+            })
+
+    # --------------------- AMM Info ---------------------
+    amm_info = {}
+    try:
+        req = AMMInfo(
+            asset={"currency": RLUSD_CURRENCY, "issuer": RLUSD_ISSUER},
+            asset2={"currency": token_hex, "issuer": issuing_addr}
+        )
+        resp = await XRPL_CLIENT.request(req)
+        amm_info = resp.result
+    except Exception as e:
+        amm_info = {"error": f"AMM not found or not active: {e}"}
+
+    # --------------------- Calculated Stats ---------------------
+    liquidity_usd = company["total_valuation_usd"] * (company["liquidity_percent"] / 100.0)
+    market_cap = (company["total_valuation_usd"] if total_holder_tokens == total_supply else None)
+    price_per_token = (company["total_valuation_usd"] / total_supply) if total_supply else None
+
+    stats = {
+        "price_per_token_usd": round(price_per_token, 6) if price_per_token else "N/A",
+        "market_cap_usd": round(market_cap, 2) if market_cap else "N/A",
+        "liquidity_usd": round(liquidity_usd, 2),
+        "liquidity_token_amount": total_supply * (company["liquidity_percent"] / 100.0)
+    }
+
+    # --------------------- Shareholder Checklist ---------------------
+    stakeholder_check = []
+    for sh in company["shareholders"]:
+        status = []
+        if not sh["has_paid"]:
+            status.append("Missing Payment")
+        if not sh["has_trustline"]:
+            status.append("Missing Trustline")
+        stakeholder_check.append({
+            "wallet_address": sh["wallet_address"],
+            "required_rlusd": sh["required_rlusd"],
+            "has_paid": sh["has_paid"],
+            "has_trustline": sh["has_trustline"],
+            "tokens_distributed": sh["tokens_distributed"],
+            "status": "Ready" if not status else ", ".join(status)
+        })
+
+    return {
+        "company": {
+            "id": company["_id"],
+            "name": company["name"],
+            "symbol": company["symbol"],
+            "total_supply": total_supply,
+            "total_valuation_usd": company["total_valuation_usd"],
+            "liquidity_percent": company["liquidity_percent"],
+            "issuing_address": issuing_addr,
+            "state": company["state"],
+        },
+        "stats": stats,
+        "stakeholders": stakeholder_check,
+        "token_holders": token_holders,
+        "amm_info": amm_info
+    }
+
+
+@app.post("/companies/{company_id}/check_stakeholders")
+async def check_stakeholders(company_id: str):
+    """
+    Performs the stakeholder check: 
+    - Verifies if each shareholder has paid their required RLUSD.
+    - Verifies if they have set the trustline.
+    - Updates DB to reflect new has_paid and has_trustline flags.
+    - Returns status of each shareholder.
+    
+    This does NOT perform token distribution or create AMM.
+    """
+    db = app.state.db
+    company = await get_company_with_shareholders(db, company_id)
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    symbol = company["symbol"]
+    issuing_addr = company["issuing_address"]
+
+    updated_shareholders = []
+    for sh in company["shareholders"]:
+        # Check Payment
+        if not sh["has_paid"]:
+            payment_ok = await check_rlusd_payment(
+                company_addr=issuing_addr,
+                shareholder_addr=sh["wallet_address"],
+                amount_needed=sh["required_rlusd"]
+            )
+            if payment_ok:
+                sh["has_paid"] = True
+
+        # Check Trustline
+        if not sh["has_trustline"]:
+            trustline_ok = await check_trustline(
+                shareholder_addr=sh["wallet_address"],
+                token_symbol=symbol,
+                issuer_addr=issuing_addr
+            )
+            if trustline_ok:
+                sh["has_trustline"] = True
+
+        updated_shareholders.append(sh)
+
+    # Update the database
+    for sh in updated_shareholders:
+        await db.execute("""
+            UPDATE shareholders
+            SET has_paid=?, has_trustline=?
+            WHERE id=?
+        """, (
+            int(sh["has_paid"]),
+            int(sh["has_trustline"]),
+            sh["id"]
+        ))
+    await db.commit()
+
+    # Identify missing ones
+    not_paid = []
+    not_trustlined = []
+    for sh in updated_shareholders:
+        if not sh["has_paid"]:
+            not_paid.append({
+                "wallet_address": sh["wallet_address"],
+                "still_owed_rlusd": sh["required_rlusd"]
+            })
+        if not sh["has_trustline"]:
+            not_trustlined.append({
+                "wallet_address": sh["wallet_address"],
+                "token_symbol": symbol
+            })
+
+    # Final output
+    if not_paid or not_trustlined:
+        return {
+            "message": "Some shareholders are still missing payment and/or trustline.",
+            "not_paid": not_paid,
+            "not_trustlined": not_trustlined
+        }
+
+    return {
+        "message": "All shareholders have paid and set trustlines. Ready for distribution.",
+        "not_paid": [],
+        "not_trustlined": []
+    }
