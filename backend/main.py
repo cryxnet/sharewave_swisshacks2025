@@ -81,20 +81,18 @@ async def shutdown():
 
 # --------------- XRPL Integration ---------------
 from xrpl.clients import JsonRpcClient
-from xrpl.wallet import  Wallet
+from xrpl.wallet import Wallet
 from xrpl.models.transactions import Payment, AMMCreate
 from xrpl.models import requests
 from xrpl.asyncio.wallet import generate_faucet_wallet
-
-# These are the new, shorter-named functions in xrpl-py v2.0.0:
 from xrpl.transaction import sign_and_submit
+from xrpl.asyncio.clients import AsyncJsonRpcClient
 
 XRPL_URL = "https://s.altnet.rippletest.net:51234"
-XRPL_CLIENT = JsonRpcClient(XRPL_URL)
+XRPL_CLIENT = AsyncJsonRpcClient(XRPL_URL)
 
-# For demonstration, we treat "RLUSD" as an IOU from a known test issuer on XRPL:
 RLUSD_ISSUER = "rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV"
-RLUSD_CURRENCY = "USD"
+RLUSD_CURRENCY = "RLUSD"
 
 # --------------- Data Models ---------------
 
@@ -137,7 +135,7 @@ async def check_rlusd_payment(company_addr: str, shareholder_addr: str, amount_n
     """
     # Retrieve up to 200 transactions for the company wallet
     req = requests.AccountTx(account=company_addr, limit=200, forward=False)
-    resp = XRPL_CLIENT.request(req)
+    resp = await XRPL_CLIENT.request(req)
     txs = resp.result.get("transactions", [])
 
     total_found = 0.0
@@ -163,7 +161,7 @@ async def check_trustline(shareholder_addr: str, token_symbol: str, issuer_addr:
     We'll query account_lines for the shareholder.
     """
     lines_req = requests.AccountLines(account=shareholder_addr, ledger_index="validated")
-    lines_resp = XRPL_CLIENT.request(lines_req)
+    lines_resp = await XRPL_CLIENT.request(lines_req)
     lines = lines_resp.result.get("lines", [])
     for line in lines:
         if line.get("currency") == token_symbol and line.get("account") == issuer_addr:
