@@ -62,16 +62,18 @@ from xrpl.asyncio.clients import AsyncJsonRpcClient
 from xrpl.asyncio.wallet import generate_faucet_wallet
 from xrpl.asyncio.transaction import sign_and_submit
 from xrpl.models.transactions import Payment, AMMCreate, TrustSet
-from xrpl.models import requests
+from xrpl.models.requests import AccountTx, AccountLines
 from xrpl.wallet import Wallet
+from xrpl.models.amounts import IssuedCurrencyAmount
 
 XRPL_URL = "https://s.altnet.rippletest.net:51234"
 XRPL_CLIENT = AsyncJsonRpcClient(XRPL_URL)
 
-# This is the known test issuer for RLUSD on XRPL:
+# This is the known test issuer for RLUSD on XRPL
 RLUSD_ISSUER = "rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV"
-# We'll just use "RLUSD" as the 3-5 letter currency code:
+# The 40-hex code for "RLUSD"
 RLUSD_CURRENCY = "524C555344000000000000000000000000000000"
+
 
 # ------------------ Data Models ------------------
 class ShareholderInput(BaseModel):
@@ -96,13 +98,136 @@ class CompanyInput(BaseModel):
     shareholders: List[ShareholderInput]
 
 
-# ------------------ Helper to retrieve a company doc from SQLite ------------------
+# ------------------ Helper: Get Company + Shareholders ------------------
+import datetime
+
+RIPPLE_EPOCH_OFFSET = 946684800
+
+def ripple_date_to_datetime(ripple_date: int) -> datetime.datetime:
+    """
+    XRPL "date" is seconds since Ripple epoch (2000-01-01).
+    Convert to standard Python datetime.
+    """
+    return datetime.datetime.utcfromtimestamp(ripple_date + RIPPLE_EPOCH_OFFSET)
+
+def parse_transaction(tx_envelope: dict) -> dict:
+    """
+    Adapts the user script to parse the structure returned by xrpl-py AccountTx,
+    which can be either:
+      {
+        "tx_json": {
+          "TransactionType": "...",
+          "Account": "...",
+          "Destination": "...",
+          "Amount": "... or {...}",
+          "date": 123456789,
+          ...
+        },
+        "meta": {
+          "delivered_amount": "... or {...}",
+          ...
+        },
+        "validated": True,
+        "close_time_iso": "...",
+        ...
+      }
+    or in some cases:
+      {
+        "tx": {...},
+        "meta": {...},
+        ...
+      }
+    We'll look for tx_json first, then fallback to tx.
+    """
+
+    # 1) The transaction data might be in "tx_json" or "tx".
+    tx_json = tx_envelope.get("tx_json")
+    if not tx_json:
+        tx_json = tx_envelope.get("tx", {})
+
+    meta = tx_envelope.get("meta", {})
+
+    # 2) The top-level "hash" can be in tx_json["hash"] or the outer envelope
+    tx_hash = tx_json.get("hash") or tx_envelope.get("hash", "N/A")
+
+    # 3) We might have close_time_iso or not
+    close_time = tx_envelope.get("close_time_iso", "N/A")
+
+    # 4) Basic fields from the transaction
+    tx_type = tx_json.get("TransactionType", "N/A")
+    sender = tx_json.get("Account", "N/A")
+    receiver = tx_json.get("Destination", "N/A")
+
+    # 5) The ledger "date" in XRPL is an integer in the tx
+    ledger_date = tx_json.get("date")
+    if ledger_date is not None:
+        dt_obj = ripple_date_to_datetime(ledger_date)
+        tx_date = dt_obj.strftime('%Y-%m-%d %H:%M:%S')
+    else:
+        tx_date = "N/A"
+
+    # Payment vs TrustSet vs other
+    amount_str = "N/A"
+    token = "N/A"
+    issue = "N/A"
+
+    if tx_type == "Payment":
+        # Check meta for delivered_amount
+        delivered_amt = meta.get("delivered_amount")
+        if isinstance(delivered_amt, dict):
+            # IOU
+            amount_str = delivered_amt.get("value", "N/A")
+            token = delivered_amt.get("currency", "N/A")
+            issue = delivered_amt.get("issuer", "N/A")
+        elif isinstance(delivered_amt, str):
+            # Possibly XRP in drops
+            try:
+                xrp_amount = float(delivered_amt) / 1_000_000
+                amount_str = f"{xrp_amount:.6f}"
+                token = "XRP"
+            except:
+                amount_str = delivered_amt
+
+        # If delivered_amount was None or "N/A", fallback to raw "Amount"
+        if amount_str == "N/A":
+            raw_amt = tx_json.get("Amount")
+            if isinstance(raw_amt, dict):
+                amount_str = raw_amt.get("value", "N/A")
+                token = raw_amt.get("currency", "N/A")
+                issue = raw_amt.get("issuer", "N/A")
+            elif isinstance(raw_amt, str):
+                # Possibly XRP
+                try:
+                    xrp_amount = float(raw_amt) / 1_000_000
+                    amount_str = f"{xrp_amount:.6f}"
+                    token = "XRP"
+                except:
+                    amount_str = raw_amt
+
+    elif tx_type == "TrustSet":
+        limit_amount = tx_json.get("LimitAmount", {})
+        if isinstance(limit_amount, dict):
+            amount_str = limit_amount.get("value", "N/A")
+            token = limit_amount.get("currency", "N/A")
+            issue = limit_amount.get("issuer", "N/A")
+
+    return {
+        "Transaction Hash": tx_hash,
+        "Type": tx_type,
+        "Sender": sender,
+        "Receiver": receiver,
+        "Amount": amount_str,
+        "Token": token,
+        "Issue": issue,
+        "Date": tx_date,
+        "Close Time (ISO)": close_time,
+    }
+
 async def get_company_with_shareholders(db: aiosqlite.Connection, company_id: str):
     """
     Fetches a single company row plus all its shareholders, returning a dict
     that mimics the original "document" structure.
     """
-    # 1) Company row
     company_cursor = await db.execute("""
         SELECT _id, name, symbol, total_supply, total_valuation_usd,
                liquidity_percent, issuing_address, issuing_seed, state
@@ -118,7 +243,6 @@ async def get_company_with_shareholders(db: aiosqlite.Connection, company_id: st
     (cid, name, symbol, total_supply, total_val, liq_percent,
      issuing_addr, issuing_seed, state) = company_row
 
-    # 2) Shareholders
     sh_cursor = await db.execute("""
         SELECT id, wallet_address, percent, adjusted_percent, required_rlusd,
                has_paid, has_trustline, tokens_distributed
@@ -170,68 +294,97 @@ async def create_issuing_wallet():
 
 async def check_rlusd_payment(company_addr: str, shareholder_addr: str, amount_needed: float) -> bool:
     """
-    Returns True if `shareholder_addr` has sent >= `amount_needed` RLUSD to `company_addr`.
-    Otherwise returns False.
-
-    NOTE: If two different shareholders share the same XRPL address,
-    they'd both appear paid once that one address paid enough. 
-    So ensure each shareholder has a unique address.
+    Uses parse_transaction to decode each transaction from AccountTx,
+    then checks if `shareholder_addr` has sent >= `amount_needed` RLUSD to `company_addr`.
     """
-    print(f"🔍 Checking RLUSD Payment for {shareholder_addr} => {company_addr}. Needed: {amount_needed}")
+    print(f"\n🔎 Checking RLUSD Payment from {shareholder_addr} => {company_addr}, needed: {amount_needed}")
 
-    # Retrieve the last 200 transactions for the company account
     req = AccountTx(account=company_addr, limit=200, forward=False)
     resp = await XRPL_CLIENT.request(req)
     txs = resp.result.get("transactions", [])
+    print(f"  [Debug] Found {len(txs)} total ledger entries for {company_addr} from AccountTx.\n")
 
     total_found = 0.0
+    for i, tx_entry in enumerate(txs, start=1):
+        parsed = parse_transaction(tx_entry)
+        print(f"  {i}) Hash={parsed['Transaction Hash']} | Type={parsed['Type']} | "
+              f"Sender={parsed['Sender']} | Token={parsed['Token']} | Amount={parsed['Amount']} | "
+              f"Issue={parsed['Issue']}")
 
-    for tx_entry in txs:
-        tx = tx_entry.get("tx", {})
-        tx_type = tx.get("TransactionType")
-        tx_sender = tx.get("Account")
-
-        if tx_type == "Payment" and tx_sender == shareholder_addr:
-            # "Amount" is a dict for IOU, or a string for XRP
-            amount_dict = tx.get("Amount")
-            if isinstance(amount_dict, dict):
-                currency = amount_dict.get("currency")
-                issuer   = amount_dict.get("issuer")
-                value_str= amount_dict.get("value", "0")
-
-                print(f"  → Found Payment TX {tx.get('hash')}. currency={currency}, issuer={issuer}, value={value_str}")
-
-                # Match the RLUSD issuer and currency (hex or short code)
-                if issuer == RLUSD_ISSUER and currency in [RLUSD_CURRENCY, "RLUSD"]:
-                    try:
-                        val = float(value_str)
-                    except ValueError:
-                        val = 0.0
-                    if val > 0:
-                        total_found += val
-                        print(f"    ✅ Payment matched: +{val}. total_found={total_found}")
+        # Must be a Payment from the correct shareholder
+        if parsed["Type"] == "Payment" and parsed["Sender"] == shareholder_addr:
+            # Must match RLUSD hex or "RLUSD", plus known issuer
+            token_match = parsed["Token"] in [RLUSD_CURRENCY, "RLUSD"]
+            issuer_match = (parsed["Issue"] == RLUSD_ISSUER)
+            if token_match and issuer_match:
+                try:
+                    val = float(parsed["Amount"])
+                except ValueError:
+                    val = 0.0
+                if val > 0:
+                    total_found += val
+                    print(f"    ✅ Payment matched: +{val}, total_found={total_found}")
                 else:
-                    print("    ❌ Mismatch currency or issuer.")
+                    print("    ❌ Payment had non-numeric or zero amount.")
             else:
-                print(f"  ❌ Payment in XRP or malformed? amount={amount_dict}")
+                print("    ❌ Not matching RLUSD issuer/currency.")
+        else:
+            print("    (Skipped - not a Payment from this shareholder)")
 
+    # Compare to needed
     total_found_2dec = round(total_found, 2)
     needed_2dec = round(amount_needed, 2)
-    print(f"==> Final total from {shareholder_addr}: {total_found_2dec}, needed: {needed_2dec}")
+    print(f"==> Summed RLUSD from {shareholder_addr}: {total_found_2dec}, needed: {needed_2dec}")
+
     return total_found_2dec >= needed_2dec
 
+
+
+
+def currency_to_hex(currency: str) -> str:
+    """
+    Convert an ASCII token symbol (e.g. "ACRP") to a
+    40-character uppercase HEX string (padded with zeros).
+    """
+    hex_str = currency.encode("ascii").hex().upper()
+    return hex_str.ljust(40, "0")
 
 async def check_trustline(shareholder_addr: str, token_symbol: str, issuer_addr: str) -> bool:
     """
     Confirm if the shareholder set a trustline for (token_symbol, issuer_addr).
-    We'll query account_lines for the shareholder.
+    We'll query account_lines for the shareholder and look for a line:
+      {
+        "currency": <40-char hex of token_symbol>,
+        "account": issuer_addr,
+        ...
+      }
     """
-    lines_req = requests.AccountLines(account=shareholder_addr, ledger_index="validated")
+    # 1) Convert your token symbol, e.g. "ACRP", to 40-char HEX.
+    token_hex = currency_to_hex(token_symbol)
+
+    # 2) Request the account lines.
+    lines_req = AccountLines(account=shareholder_addr, ledger_index="validated")
     lines_resp = await XRPL_CLIENT.request(lines_req)
     lines = lines_resp.result.get("lines", [])
+
+    # 3) Search for the matching trustline in "lines".
     for line in lines:
-        if line.get("currency") == token_symbol and line.get("account") == issuer_addr:
+        # Example line:
+        # {
+        #   "account": "rDsM3HgETmGozgF9crnQ9kjHs7m5aGpej2",
+        #   "balance": "0",
+        #   "currency": "4143525000000000000000000000000000000000",
+        #   "limit": "1000000",
+        #   ...
+        # }
+
+        # Compare the uppercase line["currency"] to token_hex,
+        # and line["account"] to the issuer address.
+        if (line.get("currency", "").upper() == token_hex
+                and line.get("account") == issuer_addr):
             return True
+
+    # If none matched, return False.
     return False
 
 
@@ -243,21 +396,20 @@ async def distribute_tokens(
     shareholder_addr: str,
     shareholder_percent: float
 ):
-    """
-    Sends the correct portion of total_supply from the issuer to a shareholder.
-    Example: total_supply=10000, shareholder_percent=20 => 2000 tokens
-    """
     tokens_to_send = math.floor(total_supply * (shareholder_percent / 100.0))
     wallet = Wallet.from_seed(issuer_seed)
+
+    # Convert the ASCII symbol to 40-char hex if it's an IOU:
+    token_symbol_hex = currency_to_hex(token_symbol)
 
     pay_tx = Payment(
         account=issuer_addr,
         destination=shareholder_addr,
-        amount={
-            "currency": token_symbol,
-            "issuer": issuer_addr,
-            "value": str(tokens_to_send)
-        }
+        amount=IssuedCurrencyAmount(
+            currency=token_symbol_hex,
+            issuer=issuer_addr,
+            value=str(tokens_to_send),
+        ),
     )
 
     result = await sign_and_submit(pay_tx, XRPL_CLIENT, wallet)
@@ -268,6 +420,14 @@ async def distribute_tokens(
     }
 
 
+from decimal import Decimal
+
+def safe_issued_value(value: float, max_decimals: int = 8) -> str:
+    from decimal import Decimal, ROUND_DOWN
+    d = Decimal(value)
+    quantized = d.quantize(Decimal(f"1.{'0'*max_decimals}"), rounding=ROUND_DOWN)
+    return str(quantized.normalize())
+
 async def create_amm_pool(
     issuer_seed: str,
     issuer_addr: str,
@@ -275,28 +435,26 @@ async def create_amm_pool(
     token_amount: float,
     rlusd_amount: float
 ):
-    """
-    Create an AMM pool on XRPL pairing 'token_symbol' with RLUSD.
-    """
     wallet = Wallet.from_seed(issuer_seed)
 
-    amount1 = {
-        "currency": token_symbol,
-        "issuer": issuer_addr,
-        "value": str(token_amount)
-    }
-    amount2 = {
-        "currency": RLUSD_CURRENCY,
-        "issuer": RLUSD_ISSUER,
-        "value": str(rlusd_amount)
-    }
+    token_symbol_hex = currency_to_hex(token_symbol)  # If you haven't already
+
+    amount1 = IssuedCurrencyAmount(
+        currency=token_symbol_hex,
+        issuer=issuer_addr,
+        value=safe_issued_value(token_amount, 8),  # e.g. round to 8 decimals
+    )
+    amount2 = IssuedCurrencyAmount(
+        currency=RLUSD_CURRENCY,
+        issuer=RLUSD_ISSUER,
+        value=safe_issued_value(rlusd_amount, 8),  # e.g. round to 8 decimals
+    )
 
     amm_create_tx = AMMCreate(
         account=issuer_addr,
         amount=amount1,
         amount2=amount2,
-        # Example trading fee: 500 => 0.5%
-        trading_fee=500
+        trading_fee=500,
     )
     result = await sign_and_submit(amm_create_tx, XRPL_CLIENT, wallet)
     return result.result
@@ -323,13 +481,12 @@ async def create_company_endpoint(data: CompanyInput):
             detail="(sum of shareholders + liquidity_percent) must equal 100."
         )
 
-    # 2) Create an issuing wallet for the company (and set trustline to RLUSD).
+    # 2) Create an issuing wallet for the company
     issuing_addr, issuing_seed = await create_issuing_wallet()
 
-    # 3) Calculate each shareholder's required RLUSD (rounded to 2 decimals).
+    # 3) Calculate each shareholder's required RLUSD
     new_shareholders = []
     for sh in data.shareholders:
-        # portion_of_liquidity: fraction of the liquidity that each shareholder effectively covers
         portion_of_liquidity = (sh.percent / sum_sh) * data.liquidity_percent
         adjusted_percent = sh.percent + portion_of_liquidity
         required_rlusd = round(
@@ -348,7 +505,6 @@ async def create_company_endpoint(data: CompanyInput):
             "tokens_distributed": False
         })
 
-    # 4) Insert doc into SQLite
     db = app.state.db
     company_id = str(uuid.uuid4())
     await db.execute("""
@@ -408,7 +564,7 @@ async def check_and_distribute(company_id: str):
     If yes:
       1) Distribute tokens to each shareholder.
       2) Create an AMM pool with the 'liquidity_percent' portion of tokens + RLUSD in the company's wallet.
-    If not all are ready, returns which ones haven't paid or haven't trustlined.
+    If not all are ready, returns who hasn't paid or hasn't trustlined.
     """
     db = app.state.db
     company = await get_company_with_shareholders(db, company_id)
@@ -424,9 +580,9 @@ async def check_and_distribute(company_id: str):
     issuing_seed = company["issuing_seed"]
     liquidity_percent = company["liquidity_percent"]
 
-    # 1) Check on-chain RLUSD payment + trustline for each shareholder
     updated_shareholders = []
     for sh in company["shareholders"]:
+        # Check Payment
         if not sh["has_paid"]:
             payment_ok = await check_rlusd_payment(
                 company_addr=issuing_addr,
@@ -436,34 +592,32 @@ async def check_and_distribute(company_id: str):
             if payment_ok:
                 sh["has_paid"] = True
 
+        # Check Trustline
         if not sh["has_trustline"]:
-            line_ok = await check_trustline(
+            trustline_ok = await check_trustline(
                 shareholder_addr=sh["wallet_address"],
                 token_symbol=symbol,
                 issuer_addr=issuing_addr
             )
-            if line_ok:
+            if trustline_ok:
                 sh["has_trustline"] = True
 
         updated_shareholders.append(sh)
 
-    # 2) Update DB with new has_paid / has_trustline
+    # Update DB with new has_paid / has_trustline
     for sh in updated_shareholders:
-        await db.execute(
-            """
+        await db.execute("""
             UPDATE shareholders
             SET has_paid=?, has_trustline=?
             WHERE id=?
-            """,
-            (
-                int(sh["has_paid"]),
-                int(sh["has_trustline"]),
-                sh["id"]
-            )
-        )
+        """, (
+            int(sh["has_paid"]),
+            int(sh["has_trustline"]),
+            sh["id"]
+        ))
     await db.commit()
 
-    # 3) Identify any shareholders still not paid or not trustlined
+    # Identify who is still not paid or not trustlined
     not_paid = []
     not_trustlined = []
     for sh in updated_shareholders:
@@ -478,7 +632,6 @@ async def check_and_distribute(company_id: str):
                 "token_symbol": symbol
             })
 
-    # If anyone hasn't paid or hasn't trustlined, do not distribute
     if not_paid or not_trustlined:
         return {
             "message": "Not all shareholders have paid + trustlined. Distribution not performed.",
@@ -486,7 +639,7 @@ async def check_and_distribute(company_id: str):
             "not_trustlined": not_trustlined
         }
 
-    # 4) If everyone paid & trustlined, distribute tokens
+    # Everyone paid + trustlined => distribute
     sum_shareholder_percent = sum(s["percent"] for s in updated_shareholders)
     non_liquidity_supply = total_supply * ((100 - liquidity_percent) / 100.0)
     distribution_results = []
@@ -505,7 +658,7 @@ async def check_and_distribute(company_id: str):
             sh["tokens_distributed"] = True
             distribution_results.append(dist_res)
 
-    # 5) Create the AMM for the liquidity portion
+    # Create AMM for the liquidity portion
     liquidity_tokens = total_supply * (liquidity_percent / 100.0)
     liquidity_usd_value = company["total_valuation_usd"] * (liquidity_percent / 100.0)
 
@@ -517,28 +670,21 @@ async def check_and_distribute(company_id: str):
         rlusd_amount=liquidity_usd_value
     )
 
-    # 6) Mark the company as distributed
+    # Mark the company as distributed
     for sh in updated_shareholders:
-        await db.execute(
-            """
+        await db.execute("""
             UPDATE shareholders
             SET tokens_distributed=?
             WHERE id=?
-            """,
-            (
-                int(sh["tokens_distributed"]),
-                sh["id"]
-            )
-        )
-
-    await db.execute(
-        """
+        """, (
+            int(sh["tokens_distributed"]),
+            sh["id"]
+        ))
+    await db.execute("""
         UPDATE companies
         SET state=?
         WHERE _id=?
-        """,
-        ("distributed", company["_id"])
-    )
+    """, ("distributed", company["_id"]))
     await db.commit()
 
     return {
@@ -546,6 +692,7 @@ async def check_and_distribute(company_id: str):
         "distribution": distribution_results,
         "amm_result": amm_result
     }
+
 
 # ------------------ 3) GET COMPANY INFO ------------------
 @app.get("/companies/{company_id}")
@@ -619,3 +766,27 @@ async def get_shareholder_info(company_id: str, wallet: str = Query(None)):
             for sh in shareholders_to_return
         ]
     }
+
+@app.get("/debug/issuer_transactions")
+async def debug_issuer_transactions(issuer_addr: str):
+    """
+    Returns a list of all Payment transactions whose destination is the given issuer address.
+    This helps you debug all incoming payments to the company issuer wallet.
+    """
+    req = AccountTx(account=issuer_addr, limit=200)
+    resp = await XRPL_CLIENT.request(req)
+    txs = resp.result.get("transactions", [])
+    
+    debug_list = []
+    for tx_entry in txs:
+        tx = tx_entry.get("tx", {})
+        # We want transactions that are Payment and whose Destination == issuer_addr
+        if tx.get("TransactionType") == "Payment" and tx.get("Destination") == issuer_addr:
+            debug_list.append({
+                "tx_hash": tx.get("hash"),
+                "Account": tx.get("Account"),  # sender
+                "Amount": tx.get("Amount"),
+                "Destination": tx.get("Destination"),
+                "date": tx.get("date")  # if available
+            })
+    return {"issuer_transactions": debug_list}

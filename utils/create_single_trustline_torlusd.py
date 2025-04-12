@@ -8,12 +8,12 @@ from xrpl.asyncio.transaction import submit_and_wait
 # === Config ===
 TESTNET_URL = "https://s.altnet.rippletest.net:51234"
 RLUSD_ISSUER = "rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV"
-RLUSD_CURRENCY = "524C555344000000000000000000000000000000"  # "RLUSD" in hex
+RLUSD_CURRENCY = "524C555344000000000000000000000000000000"  # 20-byte hex = RLUSD
 TRUST_LIMIT = "1000000"
 
 # === Input your wallet info here ===
-ADDRESS = "rPWhqXbvW5MTfABbzXfNYPgi1QB9EweBei"
-SECRET = "sEdTvedy4451HwWu9GSJDm1XcCURWGp"
+ADDRESS = "rDsM3HgETmGozgF9crnQ9kjHs7m5aGpej2"
+SECRET = "sEdVqbuDfd1GWF7jCVVVLDtpGbGdnSj"
 
 async def create_trustline(address: str, secret: str):
     client = AsyncJsonRpcClient(TESTNET_URL)
@@ -29,8 +29,19 @@ async def create_trustline(address: str, secret: str):
     )
 
     try:
-        result = await submit_and_wait(trust_tx, client, wallet)
-        print(f"[✓] Trustline created. Result: {result.result['engine_result']}")
+        response = await submit_and_wait(trust_tx, client, wallet)
+        result = response.result
+
+        # Print full result and extract engine_result safely
+        print("Transaction submitted:")
+        print(result)
+
+        engine_result = result.get("engine_result") or result.get("meta", {}).get("TransactionResult")
+        if engine_result:
+            print(f"[✓] Trustline transaction result: {engine_result}")
+        else:
+            print("[!] Submitted, but no engine result found. Full result above.")
+
     except Exception as e:
         print(f"[x] Failed to create trustline: {e}")
 
