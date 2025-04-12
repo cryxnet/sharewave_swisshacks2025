@@ -29,6 +29,12 @@ export default function Navbar() {
       icon: <BarChart3 className="mr-2 h-4 w-4" />,
       active: pathname.includes("/dashboard") || pathname.includes("/company"),
     },
+    {
+      href: "/ai",
+      label: "AI Matching",
+      icon: <BarChart3 className="mr-2 h-4 w-4" />,
+      active: pathname.includes("/ai") || pathname.includes("/company"),
+    },
   ];
 
   return (

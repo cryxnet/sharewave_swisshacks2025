@@ -1,11 +1,24 @@
-import { Button } from "@/components/ui/button"
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card"
-import { Input } from "@/components/ui/input"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
-import { Badge } from "@/components/ui/badge"
-import { ArrowUpRight, Search, SlidersHorizontal } from "lucide-react"
-import Link from "next/link"
-import Image from "next/image"
+import { Button } from "@/components/ui/button";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Badge } from "@/components/ui/badge";
+import { ArrowUpRight, Search, SlidersHorizontal } from "lucide-react";
+import Link from "next/link";
+import Image from "next/image";
 
 // Mock data for marketplace opportunities
 const opportunities = [
@@ -69,20 +82,29 @@ const opportunities = [
     liquidityPercent: 22,
     logo: "/placeholder.svg?height=80&width=80&query=M",
   },
-]
+];
 
 export default function MarketplacePage() {
   return (
     <div className="container mx-auto py-8 px-4 md:px-6">
       <div className="flex flex-col space-y-4 md:space-y-0 md:flex-row md:items-center md:justify-between mb-8">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">Marketplace</h1>
-          <p className="text-muted-foreground mt-1">Discover and invest in tokenized companies on the XRP Ledger</p>
+          <h1 className="text-3xl font-bold tracking-tight">
+            Discover Markets
+          </h1>
+          <p className="text-muted-foreground mt-1">
+            {" "}
+            Opening private markets to everyone.
+          </p>
         </div>
         <div className="flex flex-col sm:flex-row gap-4">
           <div className="relative">
             <Search className="absolute left-2.5 top-2.5 h-4 w-4 text-muted-foreground" />
-            <Input type="search" placeholder="Search opportunities..." className="pl-8 w-full sm:w-[250px]" />
+            <Input
+              type="search"
+              placeholder="Search opportunities..."
+              className="pl-8 w-full sm:w-[250px]"
+            />
           </div>
           <div className="flex items-center gap-2">
             <Select defaultValue="newest">
@@ -91,9 +113,13 @@ export default function MarketplacePage() {
               </SelectTrigger>
               <SelectContent>
                 <SelectItem value="newest">Newest First</SelectItem>
-                <SelectItem value="valuation-high">Highest Valuation</SelectItem>
+                <SelectItem value="valuation-high">
+                  Highest Valuation
+                </SelectItem>
                 <SelectItem value="valuation-low">Lowest Valuation</SelectItem>
-                <SelectItem value="liquidity-high">Highest Liquidity</SelectItem>
+                <SelectItem value="liquidity-high">
+                  Highest Liquidity
+                </SelectItem>
               </SelectContent>
             </Select>
             <Button variant="outline" size="icon">
@@ -122,11 +148,16 @@ export default function MarketplacePage() {
                     <div>
                       <CardTitle className="text-lg flex items-center gap-1">
                         {opportunity.name}
-                        <Badge variant="outline" className="ml-2 text-xs font-normal">
+                        <Badge
+                          variant="outline"
+                          className="ml-2 text-xs font-normal"
+                        >
                           {opportunity.symbol}
                         </Badge>
                       </CardTitle>
-                      <CardDescription className="line-clamp-1 mt-1">{opportunity.description}</CardDescription>
+                      <CardDescription className="line-clamp-1 mt-1">
+                        {opportunity.description}
+                      </CardDescription>
                     </div>
                   </div>
                 </div>
@@ -135,20 +166,30 @@ export default function MarketplacePage() {
                 <div className="grid grid-cols-3 gap-4 text-sm">
                   <div>
                     <p className="text-muted-foreground">Valuation</p>
-                    <p className="font-medium">${(opportunity.valuation / 1000000).toFixed(1)}M</p>
+                    <p className="font-medium">
+                      ${(opportunity.valuation / 1000000).toFixed(1)}M
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Supply</p>
-                    <p className="font-medium">{(opportunity.tokenSupply / 1000000).toFixed(1)}M</p>
+                    <p className="font-medium">
+                      {(opportunity.tokenSupply / 1000000).toFixed(1)}M
+                    </p>
                   </div>
                   <div>
                     <p className="text-muted-foreground">Liquidity</p>
-                    <p className="font-medium">{opportunity.liquidityPercent}%</p>
+                    <p className="font-medium">
+                      {opportunity.liquidityPercent}%
+                    </p>
                   </div>
                 </div>
               </CardContent>
               <CardFooter className="pt-0">
-                <Button variant="ghost" size="sm" className="w-full group-hover:bg-primary/10 group-hover:text-primary">
+                <Button
+                  variant="ghost"
+                  size="sm"
+                  className="w-full group-hover:bg-primary/10 group-hover:text-primary"
+                >
                   View Details
                   <ArrowUpRight className="ml-2 h-4 w-4 transition-transform group-hover:translate-x-1 group-hover:-translate-y-1" />
                 </Button>
@@ -158,5 +199,5 @@ export default function MarketplacePage() {
         ))}
       </div>
     </div>
-  )
+  );
 }
