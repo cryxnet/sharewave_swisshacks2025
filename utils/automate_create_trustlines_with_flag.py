@@ -25,9 +25,9 @@ RLUSD_ISSUER = "rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV"
 RLUSD_TOKEN_SYMBOL = "RLUSD"
 
 # Hardcode the WTAC issuer address + secret (we NEED the secret to sign a transaction from it).
-WTAC_ISSUER_ADDRESS = "rQETWfXVCxKwTwG59gkp9fwMFZLfdBqseX"
-WTAC_ISSUER_SECRET = "sEd7J7SsbHtjd3b71SnnKyyHNTfU1yi"
-COMPANY_TOKEN_SYMBOL = "MITWNC"
+WTAC_ISSUER_ADDRESS = "rGHNWP6mf5vd59Y3LgCjyqh5tFJRSehL3W"
+WTAC_ISSUER_SECRET = "sEdTgzvDUmW524LiTpKH8R8G2tQ2cht"
+COMPANY_TOKEN_SYMBOL = "ACFTF"
 
 # -------------------------------------------------------------------
 # 3) Trust Limits & Flags
