@@ -1,11 +1,21 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import type React from "react";
+
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
 import { useForm } from "react-hook-form";
 import { z } from "zod";
-import { X, Plus, AlertCircle, CheckCircle2 } from "lucide-react";
+import {
+  X,
+  Plus,
+  AlertCircle,
+  CheckCircle2,
+  UploadIcon as FileUpload,
+  Upload,
+  RefreshCw,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Card,
@@ -56,6 +66,9 @@ export default function RegisterPage() {
   const { toast } = useToast();
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [totalPercentage, setTotalPercentage] = useState(0);
+  const [documentUploaded, setDocumentUploaded] = useState(false);
+  const [isUploading, setIsUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Initialize form with default values
   const form = useForm<FormValues>({
@@ -74,13 +87,13 @@ export default function RegisterPage() {
   const shareholders = form.watch("shareholders");
   const liquidityPercent = form.watch("liquidityPercent");
 
-  // Recalculate totalPercentage whenever shareholders or liquidityPercent change.
+  // Calculate total percentage whenever shareholders or liquidity changes
   useEffect(() => {
     const shareholderTotal = shareholders.reduce(
-      (sum, shareholder) => sum + Number(shareholder.percent || 0),
+      (sum, shareholder) => sum + (shareholder.percent || 0),
       0
     );
-    setTotalPercentage(shareholderTotal + Number(liquidityPercent || 0));
+    setTotalPercentage(shareholderTotal + (liquidityPercent || 0));
   }, [shareholders, liquidityPercent]);
 
   // Add a new shareholder field
@@ -103,6 +116,29 @@ export default function RegisterPage() {
     }
   };
 
+  // Handle file upload
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files.length > 0) {
+      setIsUploading(true);
+
+      // Simulate upload process with a 3-second delay
+      setTimeout(() => {
+        setIsUploading(false);
+        setDocumentUploaded(true);
+
+        toast({
+          title: "Document Uploaded Successfully",
+          description: `File: ${e.target.files?.[0].name}`,
+        });
+      }, 3000);
+    }
+  };
+
+  // Trigger file input click
+  const triggerFileUpload = () => {
+    fileInputRef.current?.click();
+  };
+
   // Handle form submission
   const onSubmit = async (data: FormValues) => {
     if (Math.abs(totalPercentage - 100) > 0.01) {
@@ -110,6 +146,16 @@ export default function RegisterPage() {
         title: "Validation Error",
         description:
           "Total percentage (shareholders + liquidity) must equal 100%",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    if (!documentUploaded) {
+      toast({
+        title: "Document Required",
+        description:
+          "Please upload the due diligence document before registering",
         variant: "destructive",
       });
       return;
@@ -131,10 +177,8 @@ export default function RegisterPage() {
         })),
       };
 
-      // Use the NEXT_PUBLIC_FASTAPI_URL environment variable for direct API calls.
-      const fastAPIUrl =
-        process.env.NEXT_PUBLIC_FASTAPI_URL || "http://localhost:8000";
-      const response = await fetch(`${fastAPIUrl}/companies`, {
+      // Call the API to register the company
+      const response = await fetch("/api/companies", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -272,15 +316,16 @@ export default function RegisterPage() {
                           {...field}
                           onChange={(e) => {
                             field.onChange(e);
-                            // Recalculate total after a short delay
+                            // Recalculate total after a short delay to ensure the form value is updated
                             setTimeout(() => {
                               const shareholderTotal = shareholders.reduce(
                                 (sum, shareholder) =>
-                                  sum + Number(shareholder.percent || 0),
+                                  sum + (shareholder.percent || 0),
                                 0
                               );
                               setTotalPercentage(
-                                shareholderTotal + Number(e.target.value || 0)
+                                shareholderTotal +
+                                  Number.parseFloat(e.target.value || "0")
                               );
                             }, 100);
                           }}
@@ -291,6 +336,84 @@ export default function RegisterPage() {
                     </FormItem>
                   )}
                 />
+              </div>
+
+              {/* Due Diligence Document Upload Section */}
+              <div className="space-y-4">
+                <div>
+                  <h3 className="text-lg font-medium mb-2">
+                    Due Diligence Document
+                  </h3>
+                  <div className="rounded-lg border border-dashed border-border p-6 bg-card/30">
+                    <input
+                      type="file"
+                      ref={fileInputRef}
+                      onChange={handleFileUpload}
+                      className="hidden"
+                      accept=".pdf,.doc,.docx,.xls,.xlsx"
+                    />
+
+                    {!documentUploaded ? (
+                      <div className="flex flex-col items-center justify-center space-y-4">
+                        <div className="h-16 w-16 rounded-full bg-primary/10 flex items-center justify-center">
+                          <FileUpload className="h-8 w-8 text-primary" />
+                        </div>
+                        <div className="text-center">
+                          <h4 className="font-medium">
+                            Upload Due Diligence Document
+                          </h4>
+                          <p className="text-sm text-muted-foreground mt-1">
+                            Upload a document containing all metadata and due
+                            diligence information
+                          </p>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          onClick={triggerFileUpload}
+                          disabled={isUploading}
+                          className="flex items-center gap-2"
+                        >
+                          {isUploading ? (
+                            <>
+                              <RefreshCw className="h-4 w-4 animate-spin" />
+                              Uploading...
+                            </>
+                          ) : (
+                            <>
+                              <Upload className="h-4 w-4" />
+                              Select Document
+                            </>
+                          )}
+                        </Button>
+                      </div>
+                    ) : (
+                      <div className="flex items-center justify-between">
+                        <div className="flex items-center gap-3">
+                          <div className="h-10 w-10 rounded-full bg-green-500/20 flex items-center justify-center">
+                            <CheckCircle2 className="h-5 w-5 text-green-500" />
+                          </div>
+                          <div>
+                            <h4 className="font-medium">Document Uploaded</h4>
+                            <p className="text-sm text-muted-foreground">
+                              Due diligence document verified
+                            </p>
+                          </div>
+                        </div>
+                        <Button
+                          type="button"
+                          variant="outline"
+                          size="sm"
+                          onClick={triggerFileUpload}
+                          className="flex items-center gap-1"
+                        >
+                          <Upload className="h-3 w-3" />
+                          Change
+                        </Button>
+                      </div>
+                    )}
+                  </div>
+                </div>
               </div>
 
               <div className="space-y-4">
@@ -310,9 +433,9 @@ export default function RegisterPage() {
                 {shareholders.map((_, index) => (
                   <div
                     key={index}
-                    className="grid gap-4 md:grid-cols-5 items-start"
+                    className="grid grid-cols-12 gap-4 items-center"
                   >
-                    <div className="md:col-span-3">
+                    <div className="col-span-7">
                       <FormField
                         control={form.control}
                         name={`shareholders.${index}.walletAddress`}
@@ -330,7 +453,7 @@ export default function RegisterPage() {
                       />
                     </div>
 
-                    <div className="md:col-span-1">
+                    <div className="col-span-4">
                       <FormField
                         control={form.control}
                         name={`shareholders.${index}.percent`}
@@ -354,16 +477,13 @@ export default function RegisterPage() {
                                       form.getValues("shareholders");
                                     const shareholderTotal =
                                       newShareholders.reduce(
-                                        (sum, sh) =>
-                                          sum + Number(sh.percent || 0),
+                                        (sum, sh) => sum + (sh.percent || 0),
                                         0
                                       );
                                     setTotalPercentage(
                                       shareholderTotal +
-                                        Number(
-                                          form.getValues("liquidityPercent") ||
-                                            0
-                                        )
+                                        (form.getValues("liquidityPercent") ||
+                                          0)
                                     );
                                   }, 100);
                                 }}
@@ -375,14 +495,14 @@ export default function RegisterPage() {
                       />
                     </div>
 
-                    <div className="flex items-center justify-end md:col-span-1">
+                    <div className="col-span-1 flex justify-center">
                       {shareholders.length > 1 && (
                         <Button
                           type="button"
                           variant="ghost"
                           size="icon"
                           onClick={() => removeShareholder(index)}
-                          className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                          className="h-10 w-10 text-muted-foreground hover:text-destructive"
                         >
                           <X className="h-4 w-4" />
                           <span className="sr-only">Remove</span>
@@ -442,11 +562,24 @@ export default function RegisterPage() {
                 </Alert>
               )}
 
+              {!documentUploaded && (
+                <Alert variant="warning">
+                  <AlertCircle className="h-4 w-4" />
+                  <AlertTitle>Document Required</AlertTitle>
+                  <AlertDescription>
+                    Please upload the due diligence document to enable
+                    registration
+                  </AlertDescription>
+                </Alert>
+              )}
+
               <CardFooter className="flex justify-end px-0 pb-0">
                 <Button
                   type="submit"
                   disabled={
-                    isSubmitting || Math.abs(totalPercentage - 100) > 0.01
+                    isSubmitting ||
+                    Math.abs(totalPercentage - 100) > 0.01 ||
+                    !documentUploaded
                   }
                   className="bg-gradient-to-r from-blue-600 to-cyan-500 hover:from-blue-700 hover:to-cyan-600"
                 >

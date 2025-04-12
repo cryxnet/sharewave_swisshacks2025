@@ -49,7 +49,7 @@ export default function Navbar() {
             className="h-8 w-8"
           />
           <span className="font-bold text-xl bg-gradient-to-r from-blue-400 to-cyan-300 bg-clip-text text-transparent">
-            XRPL Finance
+            ShareWave
           </span>
         </Link>
 
