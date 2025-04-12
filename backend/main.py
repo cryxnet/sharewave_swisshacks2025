@@ -396,7 +396,6 @@ async def create_company_endpoint(data: CompanyInput):
     }
 
 
-# --------------- 2) CHECK & DISTRIBUTE + CREATE AMM ---------------
 @app.post("/companies/{company_id}/check_and_distribute")
 async def check_and_distribute(company_id: str):
     """
@@ -405,7 +404,8 @@ async def check_and_distribute(company_id: str):
       - Set trustline
     If yes, we:
       1) Distribute tokens to each shareholder.
-      2) Create an AMM pool using the 'liquidity_percent' portion of tokens + the RLUSD in the company's wallet.
+      2) Create an AMM pool with the 'liquidity_percent' portion of tokens + RLUSD in the company's wallet.
+    If not all are ready, we return which ones haven't paid or haven't trustlined.
     """
     db = app.state.db
     company = await get_company_with_shareholders(db, company_id)
@@ -421,7 +421,6 @@ async def check_and_distribute(company_id: str):
     issuing_seed = company["issuing_seed"]
     liquidity_percent = company["liquidity_percent"]
 
-    # 2) For each shareholder, check on-chain RLUSD payment + trustline
     all_ready = True
     updated_shareholders = []
     for sh in company["shareholders"]:
@@ -446,28 +445,48 @@ async def check_and_distribute(company_id: str):
 
         updated_shareholders.append(sh)
 
-    # 3) If any shareholder is not ready => no distribution
+    # Update the DB with the new has_paid / has_trustline
     for sh in updated_shareholders:
-        if not (sh["has_paid"] and sh["has_trustline"]):
-            all_ready = False
-
-    # Update shareholders in the DB
-    for sh in updated_shareholders:
-        await db.execute("""
+        await db.execute(
+            """
             UPDATE shareholders
             SET has_paid=?, has_trustline=?
             WHERE id=?
-        """, (
-            int(sh["has_paid"]),
-            int(sh["has_trustline"]),
-            sh["id"]
-        ))
+            """,
+            (
+                int(sh["has_paid"]),
+                int(sh["has_trustline"]),
+                sh["id"]
+            )
+        )
     await db.commit()
 
-    if not all_ready:
-        return {"message": "Not all shareholders have paid + trustline. Distribution not performed."}
+    # Identify any shareholders still not paid or not trustlined
+    not_paid = []
+    not_trustlined = []
+    for sh in updated_shareholders:
+        if not sh["has_paid"]:
+            not_paid.append({
+                "wallet_address": sh["wallet_address"],
+                "still_owed_rlusd": sh["required_rlusd"]
+                # If you want the actual *remaining* vs. partial amounts,
+                # you'd have to modify check_rlusd_payment to return how much was actually received.
+            })
+        if not sh["has_trustline"]:
+            not_trustlined.append({
+                "wallet_address": sh["wallet_address"],
+                "token_symbol": symbol,
+            })
 
-    # 4) If all are ready, distribute tokens
+    # If anyone hasn't paid or hasn't trustlined, don't distribute
+    if not_paid or not_trustlined:
+        return {
+            "message": "Not all shareholders have paid + trustlined. Distribution not performed.",
+            "not_paid": not_paid,
+            "not_trustlined": not_trustlined
+        }
+
+    # 4) Everyone is ready => distribute tokens
     sum_shareholder_percent = sum(s["percent"] for s in updated_shareholders)
     non_liquidity_supply = total_supply * ((100 - liquidity_percent) / 100.0)
 
@@ -481,7 +500,7 @@ async def check_and_distribute(company_id: str):
                 token_symbol=symbol,
                 total_supply=total_supply,
                 shareholder_addr=sh["wallet_address"],
-                # pass fraction as percent (see function docstring)
+                # pass fraction as percent:
                 shareholder_percent=(share_of_non_liq / total_supply * 100.0)
             )
             sh["tokens_distributed"] = True
@@ -499,22 +518,28 @@ async def check_and_distribute(company_id: str):
         rlusd_amount=liquidity_usd_value
     )
 
-    # 6) Mark the company state as distributed + update shareholders
+    # 6) Mark the company as distributed
     for sh in updated_shareholders:
-        await db.execute("""
+        await db.execute(
+            """
             UPDATE shareholders
             SET tokens_distributed=?
             WHERE id=?
-        """, (
-            int(sh["tokens_distributed"]),
-            sh["id"]
-        ))
+            """,
+            (
+                int(sh["tokens_distributed"]),
+                sh["id"]
+            )
+        )
 
-    await db.execute("""
+    await db.execute(
+        """
         UPDATE companies
         SET state=?
         WHERE _id=?
-    """, ("distributed", company_id))
+        """,
+        ("distributed", company_id)
+    )
     await db.commit()
 
     return {
@@ -522,6 +547,7 @@ async def check_and_distribute(company_id: str):
         "distribution": distribution_results,
         "amm_result": amm_result
     }
+
 
 
 # --------------- 3) GET COMPANY INFO ---------------
