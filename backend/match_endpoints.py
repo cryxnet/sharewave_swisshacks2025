@@ -50,19 +50,19 @@ async def get_company_matches(
     - **min_score**: Minimum match score threshold (default: 0.0)
     """
     try:
-        # Get all companies and investors from the database
-        companies = await db.get_all_companies()
+        # Get all companY and investors from the database
+        company = await db.get_all_companies()
         investors = await db.get_all_investors()
         
         # Find the target company
-        target_company = next((c for c in companies if c.id == company_id), None)
+        target_company = next((c for c in company if c.id == company_id), None)
         if not target_company:
             raise HTTPException(status_code=404, detail=f"Company with ID {company_id} not found")
         
         # Get matches using the matching algorithm
         matches = find_matches_for_company(
             company_id,
-            companies,
+            company,
             investors,
             top_n=limit
         )
@@ -106,8 +106,8 @@ async def get_investor_matches(
     - **min_score**: Minimum match score threshold (default: 0.0)
     """
     try:
-        # Get all companies and investors from the database
-        companies = await db.get_all_companies()
+        # Get all companys and investors from the database
+        company = await db.get_all_companies()
         investors = await db.get_all_investors()
         
         # Find the target investor
@@ -118,7 +118,7 @@ async def get_investor_matches(
         # Get matches using the matching algorithm
         matches = find_matches_for_investor(
             investor_id,
-            companies,
+            company,
             investors,
             top_n=limit
         )

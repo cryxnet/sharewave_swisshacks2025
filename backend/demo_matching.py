@@ -56,24 +56,24 @@ async def run_demo():
     try:
         await db.connect()
         
-        # Get all companies and investors
-        companies = await db.get_all_companies()
+        # Get all company and investors
+        company = await db.get_all_companies()
         investors = await db.get_all_investors()
         
-        if not companies or not investors:
+        if not company or not investors:
             print("Database is empty. Please run populate_database.py first.")
             return
             
-        print(f"Found {len(companies)} companies and {len(investors)} investors in the database")
+        print(f"Found {len(company)} companys and {len(investors)} investors in the database")
         
         # Demo 1: Find matches for a company
         print("\n\n--- DEMO 1: MATCHING INVESTORS FOR A COMPANY ---")
-        target_company = companies[0]  # Use the first company
+        target_company = company[0]  # Use the first company
         await display_company_info(target_company)
         
         matches = find_matches_for_company(
             target_company.id,
-            companies,
+            company,
             investors,
             top_n=3
         )
@@ -87,7 +87,7 @@ async def run_demo():
         
         matches = find_matches_for_investor(
             target_investor.id,
-            companies,
+            company,
             investors,
             top_n=3
         )

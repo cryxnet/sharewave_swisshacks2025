@@ -286,13 +286,13 @@ def calculate_match_score(
 
 def find_matches_for_company(
     company_id: str,
-    companies: List[Union[Company, Dict]],
+    company: List[Union[Company, Dict]],
     investors: List[Union[Investor, Dict]],
     top_n: int = 5
 ) -> List[MatchResult]:
     """Find the best investor matches for a specific company."""
     # Convert to dict if Pydantic models were passed
-    companies_data = [c if isinstance(c, dict) else c.model_dump() for c in companies]
+    companies_data = [c if isinstance(c, dict) else c.model_dump() for c in company]
     investors_data = [i if isinstance(i, dict) else i.model_dump() for i in investors]
     
     # Find the target company
@@ -335,13 +335,13 @@ def find_matches_for_company(
 
 def find_matches_for_investor(
     investor_id: str,
-    companies: List[Union[Company, Dict]],
+    company: List[Union[Company, Dict]],
     investors: List[Union[Investor, Dict]],
     top_n: int = 5
 ) -> List[MatchResult]:
     """Find the best company matches for a specific investor."""
     # Convert to dict if Pydantic models were passed
-    companies_data = [c if isinstance(c, dict) else c.model_dump() for c in companies]
+    companies_data = [c if isinstance(c, dict) else c.model_dump() for c in company]
     investors_data = [i if isinstance(i, dict) else i.model_dump() for i in investors]
     
     # Find the target investor
@@ -353,7 +353,7 @@ def find_matches_for_investor(
     if target_investor.get('embedding') is None:
         print(f"Warning: Investor {target_investor['name']} has no embedding")
     
-    # Calculate match scores with all companies
+    # Calculate match scores with all companys
     matches = []
     for company in companies_data:
         if company.get('embedding') is None:

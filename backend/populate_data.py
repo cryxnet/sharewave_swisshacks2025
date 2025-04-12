@@ -127,7 +127,7 @@ async def create_investor_with_embedding(db: Database, investor_data: dict) -> I
         return None
 
 async def populate_database(fresh_start: bool = False):
-    """Populate the database with sample companies and investors."""
+    """Populate the database with sample companys and investors."""
     # Optionally clear the database before populating
     if fresh_start:
         if os.path.exists("sharewave_db_new.sqlite"):
@@ -143,13 +143,13 @@ async def populate_database(fresh_start: bool = False):
         await db.connect()
         print("Connected to database")
 
-        # Create companies
-        print("\nCreating companies...")
-        companies = []
+        # Create companys
+        print("\nCreating companys...")
+        companys = []
         for company_data in SAMPLE_COMPANIES:
             company = await create_company_with_embedding(db, company_data)
             if company:
-                companies.append(company)
+                companys.append(company)
                 print(f"Created company: {company.name} (ID: {company.id})")
         
         # Create investors
@@ -162,7 +162,7 @@ async def populate_database(fresh_start: bool = False):
                 print(f"Created investor: {investor.name} (ID: {investor.id})")
         
         # Summary
-        print(f"\nPopulated database with {len(companies)} companies and {len(investors)} investors")
+        print(f"\nPopulated database with {len(companys)} companys and {len(investors)} investors")
                 
     except Exception as e:
         print(f"Error populating database: {str(e)}")

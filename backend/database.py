@@ -29,7 +29,7 @@ class Database:
         """Create the necessary tables if they don't exist."""
         try:
             await self.db.execute("""
-            CREATE TABLE IF NOT EXISTS companies (
+            CREATE TABLE IF NOT EXISTS company (
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 industry TEXT NOT NULL,
@@ -72,7 +72,7 @@ class Database:
     async def company_name_exists(self, name: str) -> bool:
         """Check if a company with the given name already exists."""
         cursor = await self.db.execute(
-            "SELECT COUNT(*) FROM companies WHERE LOWER(name) = LOWER(?)",
+            "SELECT COUNT(*) FROM company WHERE LOWER(name) = LOWER(?)",
             (name,)
         )
         count = await cursor.fetchone()
@@ -93,7 +93,7 @@ class Database:
             embedding_json = json.dumps(company.embedding) if company.embedding else None
             
             await self.db.execute("""
-            INSERT INTO companies (
+            INSERT INTO company (
                 id, name, industry, stage, description, location,
                 total_valuation_usd, focus_areas, founder_types, 
                 risk_appetite, time_horizon, expected_exit, embedding
@@ -179,10 +179,10 @@ class Database:
             raise
 
     async def get_all_companies(self) -> List[Company]:
-        """Retrieve all companies from the database."""
-        cursor = await self.db.execute("SELECT * FROM companies")
+        """Retrieve all company from the database."""
+        cursor = await self.db.execute("SELECT * FROM company")
         rows = await cursor.fetchall()
-        companies = []
+        company = []
         
         for row in rows:
             company_data = dict(zip([col[0] for col in cursor.description], row))
@@ -198,9 +198,9 @@ class Database:
             if company_data['embedding']:
                 company_data['embedding'] = json.loads(company_data['embedding'])
                 
-            companies.append(Company(**company_data))
+            company.append(Company(**company_data))
         
-        return companies
+        return company
 
     async def get_all_investors(self) -> List[Investor]:
         """Retrieve all investors from the database."""
