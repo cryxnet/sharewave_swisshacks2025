@@ -20,9 +20,9 @@ def currency_to_hex(currency: str) -> str:
 
 # --- Configuration ---
 TESTNET_URL = "https://s.altnet.rippletest.net:51234"
-TOKEN_SYMBOL = "ACRP"  # The human-friendly token symbol.
+TOKEN_SYMBOL = "ATCO"  # The human-friendly token symbol.
 TOKEN_HEX = currency_to_hex(TOKEN_SYMBOL)  # e.g. "ACRP" becomes "4143525000000000000000000000000000000000"
-ISSUER_ADDRESS = "rDsM3HgETmGozgF9crnQ9kjHs7m5aGpej2"  # Issuer for ACRP.
+ISSUER_ADDRESS = "rptQwHDxLACEPw3pNmj6Tw5YvWHANdyj5S"  # Issuer for ACRP.
 TRUST_LIMIT = "1000000"  # Trust limit for the trustline.
 
 # JSON filename for the wallet accounts.
@@ -75,6 +75,7 @@ async def process_wallet_trustline(wallet_dict: dict):
     # Construct the TrustSet transaction using the IssuedCurrencyAmount class.
     trust_tx = TrustSet(
         account=wallet_obj.address,
+        flags=262144,
         limit_amount=IssuedCurrencyAmount(
             currency=TOKEN_HEX,
             issuer=ISSUER_ADDRESS,
