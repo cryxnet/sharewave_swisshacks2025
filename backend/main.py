@@ -1,8 +1,481 @@
-from fastapi import FastAPI
+"""
+A FastAPI application demonstrating:
+
+1) **Company Creation** with allocated liquidity (e.g. 10% for AMM).
+2) **MongoDB** for data persistence.
+3) **XRPL** integration to:
+   - Create an issuing wallet (for the company).
+   - Check real on-chain RLUSD payments from shareholders.
+   - Check trustlines for the company token.
+   - Distribute tokens once all have paid + trustlined.
+   - Create an AMM pool with the reserved token portion + RLUSD so the shares are tradeable.
+
+**Flow**:
+- POST /companies -> define total shares, liquidity %, shareholders
+- Each shareholder sends RLUSD to the company's wallet + sets trustline
+- POST /companies/{id}/check_and_distribute -> verifies on-chain payments + trustlines
+- If all good -> distribute tokens & create AMM with the liquidity portion
+"""
+
+from fastapi import FastAPI, HTTPException, Query
+from pydantic import BaseModel
+from typing import List
+import math
+import uuid
+
+# --------------- MongoDB + Motor Setup ---------------
+import motor.motor_asyncio
+
+MONGO_URI = "mongodb://localhost:27017"
+mongo_client = motor.motor_asyncio.AsyncIOMotorClient(MONGO_URI)
+db = mongo_client["sharewave_db"]  # Our database name
+companies_collection = db["companies"]  # Our collection
+
+# --------------- XRPL Integration ---------------
+from xrpl.clients import JsonRpcClient
+from xrpl.wallet import generate_faucet_wallet, Wallet
+from xrpl.models.transactions import (
+    Payment,
+    AMMCreate
+)
+from xrpl.transaction import safe_sign_and_submit_transaction
+from xrpl.models import requests
+
+XRPL_URL = "https://s.altnet.rippletest.net:51234"
+XRPL_CLIENT = JsonRpcClient(XRPL_URL)
+
+# For demonstration, we treat "RLUSD" as an IOU from a known test issuer on XRPL:
+RLUSD_ISSUER = "rhub8VRN55s94qWKDv6jmDy1pUykJzF3wq"  
+RLUSD_CURRENCY = "USD"
+
+# --------------- Data Models ---------------
+
+class ShareholderInput(BaseModel):
+    """Defines a single shareholder with wallet + percent ownership (excluding liquidity)."""
+    wallet_address: str
+    percent: float  # e.g. 20 => 20%
+
+class CompanyInput(BaseModel):
+    """
+    Defines how to create a new company:
+    - total_supply: total shares minted (int)
+    - total_valuation_usd: how many USD needed in total
+    - liquidity_percent: how many % of shares are allocated to AMM pool
+    - shareholders: e.g. 4 people holding 90% collectively if liquidity is 10%
+    """
+    name: str
+    symbol: str
+    total_supply: int
+    total_valuation_usd: float
+    liquidity_percent: float
+    shareholders: List[ShareholderInput]
 
 app = FastAPI()
 
+# ----------- XRPL Utility Functions -----------
 
-@app.get("/")
-async def root():
-    return {"message": "Hello World"}
+async def create_issuing_wallet():
+    """
+    Creates (funds) a brand-new wallet on the XRPL testnet.
+    Returns (address, seed).
+    """
+    w = generate_faucet_wallet(XRPL_CLIENT, debug=False)
+    return w.classic_address, w.seed
+
+async def check_rlusd_payment(company_addr: str, shareholder_addr: str, amount_needed: float) -> bool:
+    """
+    Check if shareholder_addr has sent >= amount_needed of RLUSD to company_addr.
+    We'll parse the company's AccountTx, sum any RLUSD payments from that shareholder.
+    """
+    # Retrieve up to 200 transactions for the company wallet
+    req = requests.AccountTx(account=company_addr, limit=200, forward=False)
+    resp = XRPL_CLIENT.request(req)
+    txs = resp.result.get("transactions", [])
+
+    total_found = 0.0
+    for tx_entry in txs:
+        tx = tx_entry.get("tx", {})
+        meta = tx_entry.get("meta", {})
+        # Must be a Payment from the shareholder
+        if tx.get("TransactionType") == "Payment" and tx.get("Account") == shareholder_addr:
+            delivered_amount = meta.get("delivered_amount")
+            # For IOU, delivered_amount is an object like:
+            # {"currency":"USD","issuer":"rhub8...","value":"5000"}
+            if isinstance(delivered_amount, dict):
+                if (delivered_amount["currency"] == RLUSD_CURRENCY and
+                    delivered_amount["issuer"] == RLUSD_ISSUER):
+                    val = float(delivered_amount["value"])
+                    total_found += val
+
+    return total_found >= amount_needed
+
+async def check_trustline(shareholder_addr: str, token_symbol: str, issuer_addr: str) -> bool:
+    """
+    Confirm if the shareholder set a trustline for (token_symbol, issuer_addr).
+    We'll query account_lines for the shareholder.
+    """
+    lines_req = requests.AccountLines(account=shareholder_addr, ledger_index="validated")
+    lines_resp = XRPL_CLIENT.request(lines_req)
+    lines = lines_resp.result.get("lines", [])
+    for line in lines:
+        if line.get("currency") == token_symbol and line.get("account") == issuer_addr:
+            return True
+    return False
+
+async def distribute_tokens(
+    issuer_seed: str,
+    issuer_addr: str,
+    token_symbol: str,
+    total_supply: int,
+    shareholder_addr: str,
+    shareholder_percent: float
+):
+    """
+    Sends the correct portion of total_supply from the issuer to a shareholder.
+    Example: total_supply=10000, shareholder_percent=20 => 2000 tokens
+    """
+    tokens_to_send = math.floor(total_supply * (shareholder_percent / 100.0))
+
+    # We must sign with the issuer wallet (the company's private key)
+    wallet = Wallet(seed=issuer_seed, sequence=0)
+
+    pay_tx = Payment(
+        account=issuer_addr,
+        destination=shareholder_addr,
+        amount={
+            "currency": token_symbol,
+            "issuer": issuer_addr,
+            "value": str(tokens_to_send)
+        }
+    )
+    result = safe_sign_and_submit_transaction(pay_tx, wallet, XRPL_CLIENT)
+    return {
+        "shareholder": shareholder_addr,
+        "tokens_sent": tokens_to_send,
+        "tx_result": result.result
+    }
+
+async def create_amm_pool(
+    issuer_seed: str,
+    issuer_addr: str,
+    token_symbol: str,
+    token_amount: float,
+    rlusd_amount: float
+):
+    """
+    Create an AMM pool on XRPL pairing 'token_symbol' with RLUSD.
+
+    XRPL AMM requires:
+      AMMCreate:
+        - Amount = one asset
+        - Amount2 = second asset
+        - Optionally TradingFee, etc.
+    """
+    wallet = Wallet(seed=issuer_seed, sequence=0)
+
+    # AMM uses 'Amount' and 'Amount2'. Let's define them carefully:
+    # 1) The company's token
+    amount1 = {
+        "currency": token_symbol,
+        "issuer": issuer_addr,
+        "value": str(token_amount)
+    }
+    # 2) The RLUSD
+    amount2 = {
+        "currency": RLUSD_CURRENCY,
+        "issuer": RLUSD_ISSUER,
+        "value": str(rlusd_amount)
+    }
+
+    amm_create_tx = AMMCreate(
+        account=issuer_addr,
+        amount=amount1,
+        amount2=amount2,
+        # Example trading fee: 500 => 0.5%
+        trading_fee=500  
+    )
+
+    # Submit
+    result = safe_sign_and_submit_transaction(amm_create_tx, wallet, XRPL_CLIENT)
+    return result.result
+
+# --------------- 1) CREATE COMPANY ---------------
+@app.post("/companies")
+async def create_company_endpoint(data: CompanyInput):
+    """
+    Creates a company with:
+      - total_supply
+      - liquidity_percent => e.g. 10% for an AMM
+      - shareholders => e.g. sum is 90% if liquidity is 10
+    We store:
+      - The company's XRPL issuing wallet (address + seed)
+      - Each shareholder's required RLUSD payment
+    """
+    # 1) Validate sum of shareholder % + liquidity % = 100
+    sum_sh = sum(s.percent for s in data.shareholders)
+    total_ = sum_sh + data.liquidity_percent
+    if round(total_, 2) != 100.0:
+        raise HTTPException(
+            status_code=400,
+            detail="(sum of shareholders + liquidity_percent) must equal 100."
+        )
+
+    # 2) Create an issuing wallet for the company
+    issuing_addr, issuing_seed = await create_issuing_wallet()
+
+    # 3) Calculate each shareholder's required RLUSD:
+    #    - They pay their "ownership percent" + portion of liquidity percent
+    #      (the ratio is their share% / sum_sh * liquidity_percent).
+    #    - Then we get the final "adjusted" percent for each shareholder
+    #    - required_rlusd = total_valuation_usd * (adjusted_percent / 100)
+    #    - We store them in an array for Mongo
+    # We do an example approach:
+    #   adjusted = sharePercent + (sharePercent / sum_sh) * liquidity_percent
+    #   The sum of all adjusted will be  (sum_sh + liquidity_percent) => 100%
+    #   e.g. if sharePercent=20 and sum_sh=90, liquidity_percent=10 => adjusted=20 + (20/90)*10=20+2.22=22.22 => ~22.22% of 100
+
+    # Build the shareholders doc
+    new_shareholders = []
+    for sh in data.shareholders:
+        # portion of the liquidity that this shareholder must fund:
+        portion_of_liquidity = (sh.percent / sum_sh) * data.liquidity_percent
+        adjusted_percent = sh.percent + portion_of_liquidity
+        required_rlusd = data.total_valuation_usd * (adjusted_percent / 100.0)
+
+        new_shareholders.append({
+            "id": str(uuid.uuid4()),
+            "wallet_address": sh.wallet_address,
+            "percent": float(sh.percent),  # original ownership
+            "adjusted_percent": float(adjusted_percent),
+            "required_rlusd": required_rlusd,
+            "has_paid": False,
+            "has_trustline": False,
+            "tokens_distributed": False
+        })
+
+    # 4) Insert doc into Mongo
+    #  We'll store the entire structure in "companies" collection
+    company_id = str(uuid.uuid4())
+    doc = {
+        "_id": company_id,
+        "name": data.name,
+        "symbol": data.symbol.upper(),
+        "total_supply": data.total_supply,
+        "total_valuation_usd": data.total_valuation_usd,
+        "liquidity_percent": data.liquidity_percent,
+        "issuing_address": issuing_addr,
+        "issuing_seed": issuing_seed,
+        "state": "waiting_funds",  # or "distributed"
+        "shareholders": new_shareholders,
+    }
+    await companies_collection.insert_one(doc)
+
+    return {
+        "message": "Company created successfully!",
+        "company_id": company_id,
+        "issuing_address": issuing_addr,
+        "note": "Shareholders must now send their required RLUSD to this address + set trustline. Then call /companies/{id}/check_and_distribute."
+    }
+
+# --------------- 2) CHECK & DISTRIBUTE + CREATE AMM ---------------
+@app.post("/companies/{company_id}/check_and_distribute")
+async def check_and_distribute(company_id: str):
+    """
+    Verifies if all shareholders have:
+      - Sent >= required_rlusd
+      - Set trustline
+    If yes, we:
+      1) Distribute tokens to each shareholder.
+      2) Create an AMM pool using the 'liquidity_percent' portion of tokens + the RLUSD in the company's wallet.
+    """
+    # 1) Load the company doc
+    company = await companies_collection.find_one({"_id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    if company["state"] == "distributed":
+        return {"message": "Tokens already distributed and AMM created."}
+
+    # Grab the fields
+    total_supply = company["total_supply"]
+    symbol = company["symbol"]
+    issuing_addr = company["issuing_address"]
+    issuing_seed = company["issuing_seed"]
+    liquidity_percent = company["liquidity_percent"]
+
+    # 2) For each shareholder, check on-chain RLUSD payment + trustline
+    all_ready = True
+    updated_shareholders = []
+    for sh in company["shareholders"]:
+        has_paid = sh["has_paid"]
+        has_trustline = sh["has_trustline"]
+        if not has_paid:
+            # Check RLUSD payment on XRPL
+            payment_ok = await check_rlusd_payment(
+                company_addr=issuing_addr,
+                shareholder_addr=sh["wallet_address"],
+                amount_needed=sh["required_rlusd"]
+            )
+            if payment_ok:
+                sh["has_paid"] = True
+        if not has_trustline:
+            # Check trustline
+            line_ok = await check_trustline(
+                shareholder_addr=sh["wallet_address"],
+                token_symbol=symbol,
+                issuer_addr=issuing_addr
+            )
+            if line_ok:
+                sh["has_trustline"] = True
+
+        updated_shareholders.append(sh)
+
+    # 3) If any shareholder is not ready => no distribution
+    for sh in updated_shareholders:
+        if not (sh["has_paid"] and sh["has_trustline"]):
+            all_ready = False
+
+    # Update the DB with new statuses
+    await companies_collection.update_one({"_id": company_id}, {"$set": {"shareholders": updated_shareholders}})
+
+    if not all_ready:
+        return {"message": "Not all shareholders have paid + trustline. Distribution not performed."}
+
+    # 4) If all are ready, distribute tokens
+    #   - We'll break out the portion for liquidity (liquidity_percent).
+    #     e.g. if total_supply=10,000 and liquidity_percent=10 => 1,000 tokens for AMM
+    #   - The other 9,000 tokens are distributed among shareholders
+    #   - Each shareholder's portion is (their 'percent'/sum_of_shareholders_percent) * (non-liquidity tokens)
+    #   - But we've already stored 'adjusted_percent' if we want to do direct distribution from that.
+    #   - However, the difference is: The 'adjusted_percent' was used to determine their RLUSD payment,
+    #     but the actual token distribution is typically their original 'percent' of the 90%.
+    #     We'll do it in a straightforward way:
+    #       => We distribute only the "non-liquidity" portion among them, based on their "percent" (the original one).
+    #       => Because "liquidity_percent" tokens remain in the issuing wallet for the AMM creation.
+
+    sum_shareholder_percent = sum(s["percent"] for s in updated_shareholders)
+    non_liquidity_supply = total_supply * ((100 - liquidity_percent) / 100.0)
+
+    distribution_results = []
+    for sh in updated_shareholders:
+        if not sh["tokens_distributed"]:
+            # share_of_non_liq = (sh.percent / sum_of_all_percent) * non_liquidity_supply
+            share_of_non_liq = (sh["percent"] / sum_shareholder_percent) * non_liquidity_supply
+
+            # XRPL Payment of that many tokens
+            dist_res = await distribute_tokens(
+                issuer_seed=issuing_seed,
+                issuer_addr=issuing_addr,
+                token_symbol=symbol,
+                total_supply=total_supply,  # We pass total supply but only use share_of_non_liq inside
+                shareholder_addr=sh["wallet_address"],
+                shareholder_percent=(share_of_non_liq / total_supply * 100.0)  # hack: pass the fraction as percent
+            )
+            sh["tokens_distributed"] = True
+            distribution_results.append(dist_res)
+
+    # 5) Create the AMM for the liquidity
+    #   => The company wallet (issuer) presumably has the entire total_supply minted.
+    #   => We just distributed a chunk to shareholders. The remainder (liquidity_percent of supply) is still with issuer.
+    #   => We also have RLUSD in the same issuer wallet from all the shareholder payments.
+    #   => We'll define how many tokens to deposit: e.g. liquidity_supply = total_supply * (liquidity_percent / 100)
+    #   => RLUSD for the AMM = total_valuation_usd * (liquidity_percent / 100)? Because that portion was collectively paid.
+
+    liquidity_tokens = total_supply * (liquidity_percent / 100.0)
+    # RLUSD for liquidity is the same fraction of total_valuation
+    liquidity_usd_value = company["total_valuation_usd"] * (liquidity_percent / 100.0)
+
+    # Submit an AMMCreate tx
+    amm_result = await create_amm_pool(
+        issuer_seed=issuing_seed,
+        issuer_addr=issuing_addr,
+        token_symbol=symbol,
+        token_amount=liquidity_tokens,
+        rlusd_amount=liquidity_usd_value
+    )
+
+    # 6) Mark the company state as distributed
+    await companies_collection.update_one(
+        {"_id": company_id},
+        {
+            "$set": {
+                "state": "distributed",
+                "shareholders": updated_shareholders
+            }
+        }
+    )
+
+    return {
+        "message": "All shareholders paid & trustlined. Tokens distributed + AMM created!",
+        "distribution": distribution_results,
+        "amm_result": amm_result
+    }
+
+# --------------- 3) GET COMPANY INFO ---------------
+@app.get("/companies/{company_id}")
+async def get_company_info(company_id: str):
+    """
+    Returns the current state of a company from Mongo,
+    including each shareholder's payment/trustline/distribution status.
+    """
+    doc = await companies_collection.find_one({"_id": company_id})
+    if not doc:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    # We can omit the private seed if we want to avoid exposing it
+    safe_doc = {
+        "company_id": doc["_id"],
+        "name": doc["name"],
+        "symbol": doc["symbol"],
+        "total_supply": doc["total_supply"],
+        "total_valuation_usd": doc["total_valuation_usd"],
+        "liquidity_percent": doc["liquidity_percent"],
+        "issuing_address": doc["issuing_address"],
+        "state": doc["state"],
+        "shareholders": [
+            {
+                "wallet_address": s["wallet_address"],
+                "percent": s["percent"],
+                "adjusted_percent": s["adjusted_percent"],
+                "required_rlusd": s["required_rlusd"],
+                "has_paid": s["has_paid"],
+                "has_trustline": s["has_trustline"],
+                "tokens_distributed": s["tokens_distributed"]
+            }
+            for s in doc["shareholders"]
+        ]
+    }
+    return safe_doc
+
+@app.get("/companies/{company_id}/shareholders")
+async def get_shareholder_info(company_id: str, wallet: str = Query(None)):
+    company = await companies_collection.find_one({"_id": company_id})
+    if not company:
+        raise HTTPException(status_code=404, detail="Company not found.")
+
+    all_shareholders = company["shareholders"]
+
+    # If a wallet filter is provided
+    if wallet:
+        filtered = [s for s in all_shareholders if s["wallet_address"] == wallet]
+        if not filtered:
+            raise HTTPException(status_code=404, detail="Shareholder not found.")
+        shareholders_to_return = filtered
+    else:
+        shareholders_to_return = all_shareholders
+
+    return {
+        "company_name": company["name"],
+        "symbol": company["symbol"],
+        "issuing_address": company["issuing_address"],
+        "shareholders": [
+            {
+                "wallet_address": sh["wallet_address"],
+                "required_rlusd": sh["required_rlusd"],
+                "has_paid": sh["has_paid"],
+                "has_trustline": sh["has_trustline"],
+                "tokens_distributed": sh["tokens_distributed"]
+            }
+            for sh in shareholders_to_return
+        ]
+    }

@@ -1,0 +1,62 @@
+[
+    {
+        "wallet_number": 1,
+        "address": "rMCaggVd5fUr9Hty3hxVkv5YHcRRsB1cwE",
+        "secret": "sEdTmuMzbjbGg4EcFXJFwzjZhHHbyae",
+        "balance": 100000000
+    },
+    {
+        "wallet_number": 2,
+        "address": "r43HarrgJU8MUKHKS52BeMSSobSfh34bBA",
+        "secret": "sEdTsEL5SPw8qyNWCoDnZ9p89fAiJbJ",
+        "balance": 100000000
+    },
+    {
+        "wallet_number": 3,
+        "address": "rD4P433T6VLKKCEg5tiQ7TZ9BSFNZPgCK9",
+        "secret": "sEdTnxX22m3JpjwbcjBAvHRK18GQUdz",
+        "balance": 100000000
+    },
+    {
+        "wallet_number": 4,
+        "address": "rs9g13oGCCuxiPBgLav6AeY25dT59jqU1E",
+        "secret": "sEd78EuYU19ZBiYX2H97oWygC6f16Ut",
+        "balance": 100000000
+    },
+    {
+        "wallet_number": 5,
+        "address": "r4dG7esjcwfTSHNzfq6LwMv8DGkvceBBcw",
+        "secret": "sEd7g3no875UXJHssmq1aDjQTfyMidi",
+        "balance": 100000000
+    },
+    {
+        "wallet_number": 6,
+        "address": "rMA21noPe1YTzM2o58BX4kVtUy95GktsbX",
+        "secret": "sEdVdzSXjeMZVgxwukiLJjzFejww1bF",
+        "balance": 100000000
+    },
+    {
+        "wallet_number": 7,
+        "address": "rayP337M5tipVQCbvi7HrxFGrFMXXDcyUg",
+        "secret": "sEd7nxroTc1vg7h3WKpx47d9V4HZoV9",
+        "balance": 100000000
+    },
+    {
+        "wallet_number": 8,
+        "address": "rJp1XvrEXUfkzumLqhjevJHTvBR8QKJxu3",
+        "secret": "sEdVEKhQMt9Z2Y5kCAHaKfkbkfWdqay",
+        "balance": 100000000
+    },
+    {
+        "wallet_number": 9,
+        "address": "rMER2NFbyWWAzV9Q7nYyWsHUvyptc7i7tQ",
+        "secret": "sEdT1r2QrwGaJCrzaJarxB4wp1HKFbt",
+        "balance": 100000000
+    },
+    {
+        "wallet_number": 10,
+        "address": "rB5aMuKZv5E277k8w9WRYjHNUafxwRAfJa",
+        "secret": "sEd7J1v6eA33y4dPS3sBubRuQoyGcM9",
+        "balance": 100000000
+    }
+]
