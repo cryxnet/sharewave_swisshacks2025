@@ -25,6 +25,7 @@ class Database:
         if self.db:
             await self.db.close()
 
+    # Updates for database.py
     async def _create_tables(self):
         """Create the necessary tables if they don't exist."""
         try:
@@ -33,15 +34,19 @@ class Database:
                 id TEXT PRIMARY KEY,
                 name TEXT NOT NULL UNIQUE,
                 industry TEXT NOT NULL,
+                sub_industries TEXT,
                 stage TEXT NOT NULL,
                 description TEXT,
                 location TEXT,
                 total_valuation_usd REAL,
+                revenue_stage TEXT,
+                business_model TEXT,
+                exit_strategy TEXT,
                 focus_areas TEXT,
                 founder_types TEXT,
                 risk_appetite TEXT,
                 time_horizon TEXT,
-                expected_exit TEXT,
+                esg_focus INTEGER,
                 embedding TEXT  -- Store as JSON string
             )
             """)
@@ -51,10 +56,14 @@ class Database:
                 name TEXT NOT NULL UNIQUE,
                 investor_type TEXT,
                 preferred_industries TEXT,
+                excluded_industries TEXT,
                 preferred_stages TEXT,
                 min_investment_usd REAL,
                 max_investment_usd REAL,
                 preferred_locations TEXT,
+                business_model_focus TEXT,
+                esg_mandate INTEGER,
+                exit_timeline_years INTEGER,
                 profile_summary TEXT,
                 preferred_focus_areas TEXT,
                 preferred_founder_types TEXT,
@@ -96,8 +105,8 @@ class Database:
             INSERT INTO company (
                 id, name, industry, stage, description, location,
                 total_valuation_usd, focus_areas, founder_types, 
-                risk_appetite, time_horizon, expected_exit, embedding
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                risk_appetite, time_horizon,  embedding
+            ) VALUES (?, ?, ?, ?, ?, ?, ?,  ?, ?, ?, ?, ?)
             ON CONFLICT(id) DO UPDATE SET
                 name = excluded.name,
                 industry = excluded.industry,
@@ -109,7 +118,6 @@ class Database:
                 founder_types = excluded.founder_types,
                 risk_appetite = excluded.risk_appetite,
                 time_horizon = excluded.time_horizon,
-                expected_exit = excluded.expected_exit,
                 embedding = excluded.embedding
             """, (
                 company.id,
@@ -123,7 +131,7 @@ class Database:
                 json.dumps(company.founder_types),
                 company.risk_appetite,
                 company.time_horizon,
-                company.expected_exit,
+                # company.expected_exit,
                 embedding_json
             ))
             await self.db.commit()
@@ -179,50 +187,75 @@ class Database:
             raise
 
     async def get_all_companies(self) -> List[Company]:
-        """Retrieve all company from the database."""
+        """Get all companies from the database."""
         cursor = await self.db.execute("SELECT * FROM company")
         rows = await cursor.fetchall()
-        company = []
+        companies = []
         
         for row in rows:
-            company_data = dict(zip([col[0] for col in cursor.description], row))
+            company_data = dict(zip([column[0] for column in cursor.description], row))
             
             # Parse JSON fields
-            for field in ['focus_areas', 'founder_types']:
-                if company_data.get(field):
-                    company_data[field] = json.loads(company_data[field])
+            json_fields = ['sub_industries', 'focus_areas', 'founder_types']
+            for field in json_fields:
+                if field in company_data and company_data[field]:
+                    try:
+                        company_data[field] = json.loads(company_data[field])
+                    except json.JSONDecodeError:
+                        company_data[field] = []
                 else:
                     company_data[field] = []
-                    
-            # Parse embedding if it exists
-            if company_data['embedding']:
-                company_data['embedding'] = json.loads(company_data['embedding'])
-                
-            company.append(Company(**company_data))
+
+            # Convert SQLite integer to boolean
+            if 'esg_focus' in company_data:
+                company_data['esg_focus'] = bool(company_data['esg_focus'])
+
+            # Parse embedding if exists
+            if company_data.get('embedding'):
+                try:
+                    company_data['embedding'] = json.loads(company_data['embedding'])
+                except json.JSONDecodeError:
+                    company_data['embedding'] = None
+
+            companies.append(Company(**company_data))
         
-        return company
+        return companies
 
     async def get_all_investors(self) -> List[Investor]:
-        """Retrieve all investors from the database."""
+        """Get all investors from the database."""
         cursor = await self.db.execute("SELECT * FROM investors")
         rows = await cursor.fetchall()
         investors = []
         
         for row in rows:
-            investor_data = dict(zip([col[0] for col in cursor.description], row))
+            investor_data = dict(zip([column[0] for column in cursor.description], row))
             
             # Parse JSON fields
-            for field in ['preferred_industries', 'preferred_stages', 'preferred_locations', 
-                         'preferred_focus_areas', 'preferred_founder_types', 'preferred_time_horizon']:
-                if investor_data.get(field):
-                    investor_data[field] = json.loads(investor_data[field])
+            json_fields = [
+                'preferred_industries', 'excluded_industries', 'preferred_stages',
+                'preferred_locations', 'business_model_focus', 'preferred_focus_areas',
+                'preferred_founder_types', 'preferred_time_horizon'
+            ]
+            for field in json_fields:
+                if field in investor_data and investor_data[field]:
+                    try:
+                        investor_data[field] = json.loads(investor_data[field])
+                    except json.JSONDecodeError:
+                        investor_data[field] = []
                 else:
                     investor_data[field] = []
-                    
-            # Parse embedding if it exists
-            if investor_data['embedding']:
-                investor_data['embedding'] = json.loads(investor_data['embedding'])
-                
+
+            # Convert SQLite integer to boolean
+            if 'esg_mandate' in investor_data:
+                investor_data['esg_mandate'] = bool(investor_data['esg_mandate'])
+
+            # Parse embedding if exists
+            if investor_data.get('embedding'):
+                try:
+                    investor_data['embedding'] = json.loads(investor_data['embedding'])
+                except json.JSONDecodeError:
+                    investor_data['embedding'] = None
+
             investors.append(Investor(**investor_data))
-            
+        
         return investors

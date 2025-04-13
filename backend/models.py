@@ -1,3 +1,4 @@
+# Updated models.py
 from typing import List, Optional
 from pydantic import BaseModel, Field
 import uuid
@@ -34,24 +35,49 @@ class RiskAppetite(str, Enum):
     AGGRESSIVE = "aggressive"
     VERY_AGGRESSIVE = "very_aggressive"
 
-class TimeHorizon(str, Enum):
-    SHORT_TERM = "short_term"     # 1-3 years
-    MEDIUM_TERM = "medium_term"   # 3-5 years
-    LONG_TERM = "long_term"       # 5+ years
+class RevenueStage(str, Enum):
+    PRE_REVENUE = "pre_revenue"
+    EARLY_REVENUE = "early_revenue"
+    BREAK_EVEN = "break_even"
+    PROFITABLE = "profitable"
 
+class BusinessModel(str, Enum):
+    SAAS = "saas"
+    MARKETPLACE = "marketplace"
+    HARDWARE = "hardware"
+    SUBSCRIPTION = "subscription"
+    LICENSING = "licensing"
+    CONSULTING = "consulting"
+
+class ExitStrategy(str, Enum):
+    ACQUISITION = "acquisition"
+    IPO = "ipo"
+    MERGER = "merger"
+
+class TimeHorizon(str, Enum):
+    SHORT_TERM = "short_term"
+    MEDIUM_TERM = "medium_term"
+    LONG_TERM = "long_term"
+
+# Update existing models
 class Company(BaseModel):
     id: str = Field(default_factory=generate_uuid)
     name: str
     industry: str
+    sub_industries: List[str] = Field(default_factory=list)
     stage: str
     description: str
     location: str
     total_valuation_usd: float
+    revenue_stage: Optional[str] = None
+    business_model: Optional[str] = None
+    exit_strategy: Optional[str] = None
     focus_areas: List[str] = Field(default_factory=list)
     founder_types: List[str] = Field(default_factory=list)
     risk_appetite: Optional[str] = None
     time_horizon: Optional[str] = None
-    expected_exit: Optional[str] = None
+    # expected_exit: Optional[str] = None
+    esg_focus: bool = False
     embedding: Optional[List[float]] = None
 
 class Investor(BaseModel):
@@ -59,10 +85,14 @@ class Investor(BaseModel):
     name: str
     investor_type: str
     preferred_industries: List[str]
+    excluded_industries: List[str] = Field(default_factory=list)
     preferred_stages: List[str]
     preferred_locations: List[str]
     min_investment_usd: Optional[float] = None
     max_investment_usd: Optional[float] = None
+    business_model_focus: List[str] = Field(default_factory=list)
+    esg_mandate: bool = False
+    exit_timeline_years: Optional[int] = None
     profile_summary: str
     preferred_focus_areas: List[str] = Field(default_factory=list)
     preferred_founder_types: List[str] = Field(default_factory=list)
