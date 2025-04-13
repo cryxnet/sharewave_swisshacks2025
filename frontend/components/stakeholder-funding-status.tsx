@@ -333,10 +333,10 @@ export default function StakeholderFundingStatus({
       {/* CTA Button to redirect to Crossmark Wallet */}
       <div className="mt-6 text-center">
         <CrossmarkPayButton
-          destination="rGHNWP6mf5vd59Y3LgCjyqh5tFJRSehL3W"
+          destination="rLpXb2V556Mg3oYKVUqPgEaSqhK1LfcRZ1"
           currency="524C555344000000000000000000000000000000"
           issuer="rQhWct2fv4Vc4KRjRgMrxa8xPN9Zx9iLKV"
-          value="0.89"
+          value="8.89"
         />
       </div>
     </div>

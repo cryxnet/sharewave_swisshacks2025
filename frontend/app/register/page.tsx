@@ -1,7 +1,6 @@
 "use client";
 
 import type React from "react";
-
 import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { zodResolver } from "@hookform/resolvers/zod";
@@ -90,10 +89,10 @@ export default function RegisterPage() {
   // Calculate total percentage whenever shareholders or liquidity changes
   useEffect(() => {
     const shareholderTotal = shareholders.reduce(
-      (sum, shareholder) => sum + (shareholder.percent || 0),
+      (sum, shareholder) => sum + (Number(shareholder.percent) || 0),
       0
     );
-    setTotalPercentage(shareholderTotal + (liquidityPercent || 0));
+    setTotalPercentage(shareholderTotal + (Number(liquidityPercent) || 0));
   }, [shareholders, liquidityPercent]);
 
   // Add a new shareholder field
@@ -178,7 +177,7 @@ export default function RegisterPage() {
       };
 
       // Call the API to register the company
-      const response = await fetch("/api/companies", {
+      const response = await fetch("http://localhost:8000/companies", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -316,16 +315,14 @@ export default function RegisterPage() {
                           {...field}
                           onChange={(e) => {
                             field.onChange(e);
-                            // Recalculate total after a short delay to ensure the form value is updated
                             setTimeout(() => {
                               const shareholderTotal = shareholders.reduce(
                                 (sum, shareholder) =>
-                                  sum + (shareholder.percent || 0),
+                                  sum + (Number(shareholder.percent) || 0),
                                 0
                               );
                               setTotalPercentage(
-                                shareholderTotal +
-                                  Number.parseFloat(e.target.value || "0")
+                                shareholderTotal + Number(e.target.value || "0")
                               );
                             }, 100);
                           }}
@@ -471,19 +468,21 @@ export default function RegisterPage() {
                                 {...field}
                                 onChange={(e) => {
                                   field.onChange(e);
-                                  // Recalculate total after a short delay
                                   setTimeout(() => {
                                     const newShareholders =
                                       form.getValues("shareholders");
                                     const shareholderTotal =
                                       newShareholders.reduce(
-                                        (sum, sh) => sum + (sh.percent || 0),
+                                        (sum, sh) =>
+                                          sum + (Number(sh.percent) || 0),
                                         0
                                       );
                                     setTotalPercentage(
                                       shareholderTotal +
-                                        (form.getValues("liquidityPercent") ||
-                                          0)
+                                        Number(
+                                          form.getValues("liquidityPercent") ||
+                                            "0"
+                                        )
                                     );
                                   }, 100);
                                 }}
@@ -529,7 +528,7 @@ export default function RegisterPage() {
                           : "text-amber-500"
                       }`}
                     >
-                      {totalPercentage.toFixed(1)}%
+                      {Number(totalPercentage).toFixed(1)}%
                     </div>
                     {Math.abs(totalPercentage - 100) < 0.01 ? (
                       <CheckCircle2 className="h-5 w-5 text-green-500" />
@@ -546,7 +545,9 @@ export default function RegisterPage() {
                         ? "bg-green-500"
                         : "bg-amber-500"
                     }`}
-                    style={{ width: `${Math.min(totalPercentage, 100)}%` }}
+                    style={{
+                      width: `${Math.min(Number(totalPercentage), 100)}%`,
+                    }}
                   />
                 </div>
               </div>
@@ -557,7 +558,8 @@ export default function RegisterPage() {
                   <AlertTitle>Allocation Warning</AlertTitle>
                   <AlertDescription>
                     Total allocation (shareholders + liquidity) must equal
-                    exactly 100%. Current total: {totalPercentage.toFixed(1)}%
+                    exactly 100%. Current total:{" "}
+                    {Number(totalPercentage).toFixed(1)}%
                   </AlertDescription>
                 </Alert>
               )}

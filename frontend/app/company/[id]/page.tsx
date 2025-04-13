@@ -474,7 +474,7 @@ export default function CompanyDetailPage() {
             <div className="text-2xl font-bold flex items-center">
               <DollarSign className="mr-1 h-5 w-5 text-muted-foreground" />$
               {isDistributed
-                ? stats.market_cap_usd.toFixed(2)
+                ? Number(stats.market_cap_usd).toFixed(2)
                 : company.total_valuation_usd.toFixed(2)}
             </div>
           </CardContent>
