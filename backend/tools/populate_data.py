@@ -2,7 +2,11 @@ import asyncio
 import os
 from database import Database
 from models import Company, Investor, RevenueStage, BusinessModel, ExitStrategy
-from matching_algo import get_embedding, generate_company_text_for_embedding, generate_investor_text_for_embedding
+from matching_algo import (
+    get_embedding,
+    generate_company_text_for_embedding,
+    generate_investor_text_for_embedding,
+)
 
 # Sample company data
 SAMPLE_COMPANIES = [
@@ -17,7 +21,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.SAAS,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": False
+        "esg_focus": False,
     },
     {
         "name": "BioInnovate Labs",
@@ -30,7 +34,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.PRE_REVENUE,
         "business_model": BusinessModel.SUBSCRIPTION,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "GreenEnergy Corp",
@@ -43,7 +47,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.BREAK_EVEN,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.IPO,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "NeuroSync AI",
@@ -56,7 +60,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.PRE_REVENUE,
         "business_model": BusinessModel.SAAS,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": False
+        "esg_focus": False,
     },
     {
         "name": "AgroNova Tech",
@@ -69,7 +73,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "QuantumLeap Systems",
@@ -82,7 +86,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.PRE_REVENUE,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": False
+        "esg_focus": False,
     },
     {
         "name": "UrbanMobility Inc.",
@@ -95,7 +99,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.BREAK_EVEN,
         "business_model": BusinessModel.SUBSCRIPTION,
         "exit_strategy": ExitStrategy.IPO,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "MedScan Diagnostics",
@@ -108,7 +112,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.SAAS,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "EcoFabric Co.",
@@ -121,7 +125,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.PRE_REVENUE,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "FinNova AI",
@@ -134,7 +138,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.SAAS,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": False
+        "esg_focus": False,
     },
     {
         "name": "DeepSpace Mining",
@@ -147,7 +151,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.PRE_REVENUE,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.IPO,
-        "esg_focus": False
+        "esg_focus": False,
     },
     {
         "name": "SmartGrid AI",
@@ -160,7 +164,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.SAAS,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "EduBotics",
@@ -173,7 +177,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": False
+        "esg_focus": False,
     },
     {
         "name": "CyberGuard Labs",
@@ -186,7 +190,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.SAAS,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": False
+        "esg_focus": False,
     },
     {
         "name": "PlantAI",
@@ -199,7 +203,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.PRE_REVENUE,
         "business_model": BusinessModel.SAAS,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "OceanClean Robotics",
@@ -212,7 +216,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.BREAK_EVEN,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.IPO,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "BioSynth Foods",
@@ -225,7 +229,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "LegalEase AI",
@@ -238,7 +242,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.PRE_REVENUE,
         "business_model": BusinessModel.SAAS,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": False
+        "esg_focus": False,
     },
     {
         "name": "NanoMed Devices",
@@ -251,7 +255,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "SolarX Innovations",
@@ -264,7 +268,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.PRE_REVENUE,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "DataSphere Analytics",
@@ -277,7 +281,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.BREAK_EVEN,
         "business_model": BusinessModel.SAAS,
         "exit_strategy": ExitStrategy.IPO,
-        "esg_focus": False
+        "esg_focus": False,
     },
     {
         "name": "ReGen Materials",
@@ -290,7 +294,7 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.EARLY_REVENUE,
         "business_model": BusinessModel.HARDWARE,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
+        "esg_focus": True,
     },
     {
         "name": "MindLink VR",
@@ -303,8 +307,8 @@ SAMPLE_COMPANIES = [
         "revenue_stage": RevenueStage.PRE_REVENUE,
         "business_model": BusinessModel.SUBSCRIPTION,
         "exit_strategy": ExitStrategy.ACQUISITION,
-        "esg_focus": True
-    }
+        "esg_focus": True,
+    },
 ]
 
 # Sample investor data
@@ -321,7 +325,7 @@ SAMPLE_INVESTORS = [
         "business_model_focus": ["SaaS", "Marketplace", "Subscription"],
         "esg_mandate": False,
         "exit_timeline_years": 5,
-        "profile_summary": "Early-stage tech investor focused on B2B SaaS"
+        "profile_summary": "Early-stage tech investor focused on B2B SaaS",
     },
     {
         "name": "Life Sciences Fund",
@@ -335,7 +339,7 @@ SAMPLE_INVESTORS = [
         "business_model_focus": ["Hardware", "SaaS"],
         "esg_mandate": False,
         "exit_timeline_years": 7,
-        "profile_summary": "Specialized in life sciences and healthcare innovations"
+        "profile_summary": "Specialized in life sciences and healthcare innovations",
     },
     {
         "name": "Green Future Investments",
@@ -349,29 +353,30 @@ SAMPLE_INVESTORS = [
         "business_model_focus": ["Hardware", "SaaS", "Marketplace"],
         "esg_mandate": True,
         "exit_timeline_years": 10,
-        "profile_summary": "Impact-focused fund investing in sustainable technologies"
-    }
+        "profile_summary": "Impact-focused fund investing in sustainable technologies",
+    },
 ]
+
 
 async def create_company_with_embedding(db: Database, company_data: dict) -> Company:
     """Create a company with embeddings."""
     try:
         # Check if company already exists by name
-        if await db.company_name_exists(company_data['name']):
+        if await db.company_name_exists(company_data["name"]):
             print(f"Company {company_data['name']} already exists, skipping...")
             return None
 
         # Create a new company instance
         company = Company(**company_data)
-        
+
         # Generate text for embedding
         text = generate_company_text_for_embedding(company.model_dump())
-        
+
         # Get embedding
         embedding = get_embedding(text)
         if embedding is not None:
             company.embedding = embedding.tolist()
-            
+
             # Save to database
             await db.save_company(company)
             print(f"Successfully saved company: {company.name}")
@@ -383,25 +388,26 @@ async def create_company_with_embedding(db: Database, company_data: dict) -> Com
         print(f"Error creating company: {str(e)}")
         return None
 
+
 async def create_investor_with_embedding(db: Database, investor_data: dict) -> Investor:
     """Create an investor with embeddings."""
     try:
         # Check if investor already exists by name
-        if await db.investor_name_exists(investor_data['name']):
+        if await db.investor_name_exists(investor_data["name"]):
             print(f"Investor {investor_data['name']} already exists, skipping...")
             return None
 
         # Create a new investor instance
         investor = Investor(**investor_data)
-        
+
         # Generate text for embedding
         text = generate_investor_text_for_embedding(investor.model_dump())
-        
+
         # Get embedding
         embedding = get_embedding(text)
         if embedding is not None:
             investor.embedding = embedding.tolist()
-            
+
             # Save to database
             await db.save_investor(investor)
             print(f"Successfully saved investor: {investor.name}")
@@ -413,6 +419,7 @@ async def create_investor_with_embedding(db: Database, investor_data: dict) -> I
         print(f"Error creating investor: {str(e)}")
         return None
 
+
 async def populate_database(fresh_start: bool = False):
     """Populate the database with sample companies and investors."""
     # Optionally clear the database before populating
@@ -423,7 +430,7 @@ async def populate_database(fresh_start: bool = False):
                 print("Removed existing database file")
             except Exception as e:
                 print(f"Error removing database file: {str(e)}")
-    
+
     # Connect to database
     db = Database()
     try:
@@ -438,7 +445,7 @@ async def populate_database(fresh_start: bool = False):
             if company:
                 companies.append(company)
                 print(f"Created company: {company.name} (ID: {company.id})")
-        
+
         # Create investors
         print("\nCreating investors...")
         investors = []
@@ -447,23 +454,27 @@ async def populate_database(fresh_start: bool = False):
             if investor:
                 investors.append(investor)
                 print(f"Created investor: {investor.name} (ID: {investor.id})")
-        
-        #call update_existing_data to ensure all data is up to date
+
+        # call update_existing_data to ensure all data is up to date
         # try:
         import tools.update_existing_data as update_existing_data
+
         print("Updating existing data...")
 
         await update_existing_data.main()
         print("Updated existing data successfully")
         # except Exception as e:
         #     print(f"Error updating existing data: {str(e)}")
-            
+
         # Summary
-        print(f"\nPopulated database with {len(companies)} companies and {len(investors)} investors")
+        print(
+            f"\nPopulated database with {len(companies)} companies and {len(investors)} investors"
+        )
     except Exception as e:
         print(f"Error populating database: {str(e)}")
     finally:
         await db.close()
+
 
 if __name__ == "__main__":
     asyncio.run(populate_database(fresh_start=True))

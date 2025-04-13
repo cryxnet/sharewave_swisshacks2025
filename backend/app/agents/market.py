@@ -3,6 +3,7 @@ from app.agents.base import BaseAgent
 from app.models.schemas import DocumentType, UploadedDocument, AgentScore
 from app.services.llm import AzureOpenAIService
 
+
 class FinancialAgent(BaseAgent):
     def __init__(self):
         super().__init__(DocumentType.FINANCIAL)
@@ -11,8 +12,7 @@ class FinancialAgent(BaseAgent):
 
     def _load_prompt_template(self) -> str:
         # Load the financial prompt template from a file or define it here
-        return (
-            """You are a market analysis expert conducting due diligence. Your task is to evaluate the company's market opportunity and competitive position.
+        return """You are a market analysis expert conducting due diligence. Your task is to evaluate the company's market opportunity and competitive position.
 
 Document to analyze:
 {document_content}
@@ -36,22 +36,17 @@ Provide your analysis in the following format:
 - Safety Score (0-100): [score]
 
 """
-        )
-    
+
     async def analyze(self, document: UploadedDocument) -> AgentScore:
-        prompt = self.prompt_template.format(
-            document_content=document.content
-        )
-        
+        prompt = self.prompt_template.format(document_content=document.content)
+
         response = await self.llm.analyze(prompt)
-        
+
         # Parse LLM response to extract safety score and comments
         # This is a simplified version - you'd need proper response parsing
         safety_score = float(response.get("safety_score", 0))
         comments = response.get("comments", "")
-        
+
         return AgentScore(
-            agent_type=self.agent_type,
-            safety_score=safety_score,
-            comments=comments
+            agent_type=self.agent_type, safety_score=safety_score, comments=comments
         )

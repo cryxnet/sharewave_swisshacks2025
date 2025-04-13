@@ -13,6 +13,7 @@ router = APIRouter(
     responses={404: {"description": "Not found"}},
 )
 
+
 # Pydantic models for API responses
 class MatchDetailsResponse(BaseModel):
     entity_id: str
@@ -20,11 +21,13 @@ class MatchDetailsResponse(BaseModel):
     score: float
     details: dict = {}
 
+
 class MatchesResponse(BaseModel):
     matches: List[MatchDetailsResponse]
     count: int
     entity_type: str  # "company" or "investor"
     entity_name: str  # Name of the entity we're finding matches for
+
 
 # Database dependency
 async def get_db():
@@ -35,10 +38,9 @@ async def get_db():
     finally:
         await db.close()
 
+
 @router.get("/all", response_model=dict)
-async def get_all_entities_full(
-    db: Database = Depends(get_db)
-):
+async def get_all_entities_full(db: Database = Depends(get_db)):
     """
     Returns full details for all companies and investors, excluding embeddings.
     """
@@ -53,22 +55,27 @@ async def get_all_entities_full(
 
         return {
             "companies": [exclude_embedding(c) for c in companies],
-            "investors": [exclude_embedding(i) for i in investors]
+            "investors": [exclude_embedding(i) for i in investors],
         }
 
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Error fetching full entities: {str(e)}")
-    
+        raise HTTPException(
+            status_code=500, detail=f"Error fetching full entities: {str(e)}"
+        )
+
+
 @router.get("/company/{company_id}", response_model=MatchesResponse)
 async def get_company_matches(
     company_id: str,
-    limit: int = Query(5, ge=1, le=20, description="Maximum number of matches to return"),
+    limit: int = Query(
+        5, ge=1, le=20, description="Maximum number of matches to return"
+    ),
     min_score: float = Query(0.0, ge=0, le=10, description="Minimum match score"),
-    db: Database = Depends(get_db)
+    db: Database = Depends(get_db),
 ):
     """
     Get investor matches for a specific company.
-    
+
     - **company_id**: UUID of the company to find matches for
     - **limit**: Maximum number of matches to return (default: 5)
     - **min_score**: Minimum match score threshold (default: 0.0)
@@ -77,54 +84,52 @@ async def get_company_matches(
         # Get all companY and investors from the database
         company = await db.get_all_companies()
         investors = await db.get_all_investors()
-        
+
         # Find the target company
         target_company = next((c for c in company if c.id == company_id), None)
         if not target_company:
-            raise HTTPException(status_code=404, detail=f"Company with ID {company_id} not found")
-        
+            raise HTTPException(
+                status_code=404, detail=f"Company with ID {company_id} not found"
+            )
+
         # Get matches using the matching algorithm
-        matches = find_matches_for_company(
-            company_id,
-            company,
-            investors,
-            top_n=limit
-        )
-        
+        matches = find_matches_for_company(company_id, company, investors, top_n=limit)
+
         # Filter by minimum score if specified
         matches = [m for m in matches if m.score >= min_score]
-        
+
         # Convert to response model
         match_details = [
             MatchDetailsResponse(
-                entity_id=m.entity_id,
-                name=m.name,
-                score=m.score,
-                details=m.details
-            ) for m in matches
+                entity_id=m.entity_id, name=m.name, score=m.score, details=m.details
+            )
+            for m in matches
         ]
-        
+
         # Return the response
         return MatchesResponse(
             matches=match_details,
             count=len(match_details),
             entity_type="investor",
-            entity_name=target_company.name
+            entity_name=target_company.name,
         )
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error finding matches: {str(e)}")
+
 
 @router.get("/investor/{investor_id}", response_model=MatchesResponse)
 async def get_investor_matches(
     investor_id: str,
-    limit: int = Query(5, ge=1, le=20, description="Maximum number of matches to return"),
+    limit: int = Query(
+        5, ge=1, le=20, description="Maximum number of matches to return"
+    ),
     min_score: float = Query(0.0, ge=0, le=10, description="Minimum match score"),
-    db: Database = Depends(get_db)
+    db: Database = Depends(get_db),
 ):
     """
     Get company matches for a specific investor.
-    
+
     - **investor_id**: UUID of the investor to find matches for
     - **limit**: Maximum number of matches to return (default: 5)
     - **min_score**: Minimum match score threshold (default: 0.0)
@@ -133,40 +138,37 @@ async def get_investor_matches(
         # Get all companys and investors from the database
         company = await db.get_all_companies()
         investors = await db.get_all_investors()
-        
+
         # Find the target investor
         target_investor = next((i for i in investors if i.id == investor_id), None)
         if not target_investor:
-            raise HTTPException(status_code=404, detail=f"Investor with ID {investor_id} not found")
-        
+            raise HTTPException(
+                status_code=404, detail=f"Investor with ID {investor_id} not found"
+            )
+
         # Get matches using the matching algorithm
         matches = find_matches_for_investor(
-            investor_id,
-            company,
-            investors,
-            top_n=limit
+            investor_id, company, investors, top_n=limit
         )
-        
+
         # Filter by minimum score if specified
         matches = [m for m in matches if m.score >= min_score]
-        
+
         # Convert to response model
         match_details = [
             MatchDetailsResponse(
-                entity_id=m.entity_id,
-                name=m.name,
-                score=m.score,
-                details=m.details
-            ) for m in matches
+                entity_id=m.entity_id, name=m.name, score=m.score, details=m.details
+            )
+            for m in matches
         ]
-        
+
         # Return the response
         return MatchesResponse(
             matches=match_details,
             count=len(match_details),
             entity_type="company",
-            entity_name=target_investor.name
+            entity_name=target_investor.name,
         )
-    
+
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Error finding matches: {str(e)}")

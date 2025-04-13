@@ -4,9 +4,11 @@ from pydantic import BaseModel, Field
 import uuid
 from enum import Enum
 
+
 def generate_uuid() -> str:
     """Generate a unique UUID string."""
     return str(uuid.uuid4())
+
 
 class FocusArea(str, Enum):
     SUSTAINABILITY = "sustainability"
@@ -20,6 +22,7 @@ class FocusArea(str, Enum):
     AI = "artificial_intelligence"
     BLOCKCHAIN = "blockchain"
 
+
 class FounderType(str, Enum):
     FEMALE = "female_founders"
     YOUNG = "young_founders"
@@ -29,17 +32,20 @@ class FounderType(str, Enum):
     TECHNICAL = "technical_founders"
     ACADEMIC = "academic_founders"
 
+
 class RiskAppetite(str, Enum):
     CONSERVATIVE = "conservative"
     MODERATE = "moderate"
     AGGRESSIVE = "aggressive"
     VERY_AGGRESSIVE = "very_aggressive"
 
+
 class RevenueStage(str, Enum):
     PRE_REVENUE = "pre_revenue"
     EARLY_REVENUE = "early_revenue"
     BREAK_EVEN = "break_even"
     PROFITABLE = "profitable"
+
 
 class BusinessModel(str, Enum):
     SAAS = "saas"
@@ -49,15 +55,18 @@ class BusinessModel(str, Enum):
     LICENSING = "licensing"
     CONSULTING = "consulting"
 
+
 class ExitStrategy(str, Enum):
     ACQUISITION = "acquisition"
     IPO = "ipo"
     MERGER = "merger"
 
+
 class TimeHorizon(str, Enum):
     SHORT_TERM = "short_term"
     MEDIUM_TERM = "medium_term"
     LONG_TERM = "long_term"
+
 
 # Update existing models
 class Company(BaseModel):
@@ -80,6 +89,7 @@ class Company(BaseModel):
     esg_focus: bool = False
     embedding: Optional[List[float]] = None
 
+
 class Investor(BaseModel):
     id: str = Field(default_factory=generate_uuid)
     name: str
@@ -100,11 +110,12 @@ class Investor(BaseModel):
     preferred_time_horizon: List[str] = Field(default_factory=list)
     embedding: Optional[List[float]] = None
 
+
 class MatchResult(BaseModel):
     entity_id: str
     name: str
     score: float
     details: dict = {}
-    
+
     def __repr__(self):
         return f"Match(Name: {self.name}, Score: {self.score:.2f}, Details: {self.details})"
