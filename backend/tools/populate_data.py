@@ -450,7 +450,7 @@ async def populate_database(fresh_start: bool = False):
         
         #call update_existing_data to ensure all data is up to date
         # try:
-        import update_existing_data
+        import tools.update_existing_data as update_existing_data
         print("Updating existing data...")
 
         await update_existing_data.main()
