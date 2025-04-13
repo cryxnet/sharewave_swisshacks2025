@@ -144,8 +144,8 @@ A core innovation in ShareWave is the use of the issuing wallet as a secure vaul
 
 ## Proof that it works
 
-In the demo video we are demonstrating all the functuionakity and the settlemens.
-For a proof that our solution is working we are provid the wallet addresses and more.
+In the demo video we demonstrate all the functionality and billing.
+As proof that our solution works, we provide the wallet addresses and more.
 
 - #1 Stakeholder: rMCaggVd5fUr9Hty3hxVkv5YHcRRsB1cwE
 - #2 Stakeholder: r43HarrgJU8MUKHKS52BeMSSobSfh34bBA
